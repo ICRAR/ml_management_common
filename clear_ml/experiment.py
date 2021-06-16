@@ -22,10 +22,10 @@
 import torch
 import clearml
 from typing import Optional, Sequence, Union, Mapping
-from .configuration import ClearMLProjectConfiguration
-from .model_summary import model_summary
 
-TaskTypes = clearml.Task.TaskTypes
+from ..task_types import TaskTypes
+from ..configuration import MLProjectConfiguration
+from ..model_summary import model_summary
 
 
 class ClearMLExperiment(object):
@@ -33,7 +33,7 @@ class ClearMLExperiment(object):
             self,
             task_name: str,
             task_type: TaskTypes,
-            configuration: ClearMLProjectConfiguration,
+            configuration: MLProjectConfiguration,
             dict_args: dict,
             tags: Optional[Sequence[str]] = None,
             reuse_last_task_id: Union[bool, str] = True,
@@ -182,7 +182,7 @@ class ClearMLExperiment(object):
         self.task = clearml.Task.init(
             project_name=self.configuration.project_name,
             task_name=self.task_name,
-            task_type=self.task_type,
+            task_type=clearml.Task.TaskTypes[str(self.task_type)],
             tags=self.tags,
             output_uri=self.configuration.output_uri,
             reuse_last_task_id=self.reuse_last_task_id,
@@ -220,7 +220,7 @@ class ClearMLExperiment(object):
         """
         self.task.logger.report_text(model_summary(model, input_size, batch_size, device, dtypes, dot))
 
-    def download_model(self, uri: str):
+    def download_model(self, uri: str, model):
         """
         Download a model from the clearml shared storage, from the provided uri.
         May throw an exception if there is an error downloading the model, or if the uri
@@ -229,4 +229,6 @@ class ClearMLExperiment(object):
         :return: A loaded torch object containing the model weights in model["state_dict"]
         """
         model_path = clearml.Model(uri).get_local_copy()
-        return torch.load(model_path)
+        loaded_model_data = torch.load(model_path)
+        model.load_state_dict(loaded_model_data["state_dict"])
+        return model

@@ -20,10 +20,11 @@
 #    MA 02111-1307  USA
 #
 
-class ClearMLProjectConfiguration(object):
+class MLProjectConfiguration(object):
     def __init__(self, project_name: str, output_uri: str):
         """
-        Create a project configuration for a ClearML project
+        Create an ML Project configuration
+
         :param str project_name: The name of the project in which the experiment will be created. If the project does
             not exist, it is created.
         :param str output_uri: The default location for output models and other artifacts.
