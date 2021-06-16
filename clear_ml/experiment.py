@@ -169,7 +169,7 @@ class ClearMLExperiment(object):
         self.task_type = task_type
         self.configuration = configuration
         self.tags = tags
-        self.run: Optional[clearml.Task] = None
+        self.task: Optional[clearml.Task] = None
         self.dict_args = dict_args
         self.reuse_last_task_id = reuse_last_task_id
         self.continue_last_task = continue_last_task
@@ -179,7 +179,7 @@ class ClearMLExperiment(object):
         self.auto_connect_streams = auto_connect_streams
 
     def __enter__(self):
-        self.run = clearml.Task.init(
+        self.task = clearml.Task.init(
             project_name=self.configuration.project_name,
             task_name=self.task_name,
             task_type=self.task_type,
@@ -192,11 +192,11 @@ class ClearMLExperiment(object):
             auto_resource_monitoring=self.auto_resource_monitoring,
             auto_connect_streams=self.auto_connect_streams,
         )
-        self.run.connect_configuration(self.dict_args)
+        self.task.connect_configuration(self.dict_args)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.run.close()
+        self.task.close()
 
     def report_model_summary(
         self,
@@ -218,7 +218,7 @@ class ClearMLExperiment(object):
         :param dot:
         :return:
         """
-        self.run.logger.report_text(model_summary(model, input_size, batch_size, device, dtypes, dot))
+        self.task.logger.report_text(model_summary(model, input_size, batch_size, device, dtypes, dot))
 
     def download_model(self, uri: str):
         """
