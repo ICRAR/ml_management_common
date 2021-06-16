@@ -21,3 +21,5 @@
 #
 
 from .configuration import MLProjectConfiguration
+from .model_summary import model_summary
+from .task_types import TaskTypes

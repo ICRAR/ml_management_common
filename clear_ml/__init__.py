@@ -19,6 +19,4 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
-from .configuration import ClearMLProjectConfiguration
 from .experiment import ClearMLExperiment
-from .experiment import TaskTypes
