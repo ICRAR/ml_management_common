@@ -21,33 +21,18 @@
 #
 
 class MLProjectConfiguration(object):
-    def __init__(self, project_name: str, output_uri: str):
+    def __init__(self, project_name: str, tracking_server: str, output_uri: str):
         """
         Create an ML Project configuration
 
         :param str project_name: The name of the project in which the experiment will be created. If the project does
             not exist, it is created.
-        :param str output_uri: The default location for output models and other artifacts.
-            If True is passed, the default files_server will be used for model storage.
-            In the default location, ClearML creates a subfolder for the output.
-            The subfolder structure is the following:
-            <output destination name> / <project name> / <task name>.<Task ID>
-
-            The following are examples of ``output_uri`` values for the supported locations:
-
-            - A shared folder: ``/mnt/share/folder``
-            - S3: ``s3://bucket/folder``
-            - Google Cloud Storage: ``gs://bucket-name/folder``
-            - Azure Storage: ``azure://company.blob.core.windows.net/folder/``
-            - Default file server: True
-
-            .. important::
-
-               For cloud storage, you must install the **ClearML** package for your cloud storage type,
-               and then configure your storage credentials. For detailed information, see
-               `ClearML Python Client Extras <./references/clearml_extras_storage/>`_ in the "ClearML Python Client
-               Reference" section.
+        :param str tracking_server: URL to the tracking server. Required for MLFlow, but not requried for ClearML.
+            ClearML uses `clearml.conf` in your user directory instead.
+        :param str output_uri: The location for output models and other artifacts. Not required for MLFlow, but is
+            required for ClearML.
         """
         self.project_name = project_name
+        self.tracking_server = tracking_server
         self.output_uri = output_uri
 

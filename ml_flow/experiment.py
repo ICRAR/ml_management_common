@@ -53,7 +53,7 @@ class MLFlowExperiment(object):
 
     def __enter__(self):
         self.logger.__enter__()
-        mlflow.set_tracking_uri(self.configuration.output_uri)
+        mlflow.set_tracking_uri(self.configuration.tracking_server)
         mlflow.set_experiment(self.configuration.project_name)
         self.run = mlflow.start_run(
             run_id=self.run_id,
