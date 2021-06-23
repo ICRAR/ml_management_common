@@ -24,7 +24,7 @@ from typing import Optional, Dict, Any
 import mlflow
 import torch
 
-from stream_logger_context import StreamLoggerContext
+from .stream_logger_context import StreamLoggerContext
 from ..task_types import TaskTypes
 from ..configuration import MLProjectConfiguration
 from ..model_summary import model_summary
