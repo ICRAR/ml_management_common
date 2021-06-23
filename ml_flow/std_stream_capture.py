@@ -19,28 +19,43 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
-import logging
+import sys
 from io import StringIO
 
 
-class StreamLoggerContext(object):
+class StdStreamCapture(object):
 
     def __init__(self):
         self.stream = StringIO()
-        self.logger = logging.StreamHandler(self.stream)
-        self.logger.setLevel(logging.INFO)
-        self.logger.setFormatter(logging.Formatter('%(asctime)-15s:' + logging.BASIC_FORMAT))
+        self.old_stdout_write = None
+        self.old_stderr_write = None
 
     def __enter__(self):
-        logging.root.addHandler(self.logger)
+        self.old_stderr_write = sys.stderr.write
+        self.old_stdout_write = sys.stdout.write
+
+        def patch_stderr_write(text):
+            self.old_stderr_write(text)
+            if not text.startswith('\r'):
+                # avoid needing to seek and re-write in StringIO, just skip write calls that
+                # start with \r
+                self.stream.write(text)
+
+        def patch_stdout_write(text):
+            self.old_stdout_write(text)
+            if not text.startswith('\r'):
+                # avoid needing to seek and re-write in StringIO, just skip write calls that
+                # start with \r
+                self.stream.write(text)
+
+        sys.stdout.write = patch_stdout_write
+        sys.stderr.write = patch_stderr_write
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        logging.root.removeHandler(self.logger)
+        sys.stdout.write = self.old_stdout_write
+        sys.stderr.write = self.old_stderr_write
         return self
-
-    def write(self, target):
-        target.write(bytes(self.read_all(), "utf-8"))
 
     def read_all(self):
         loc = self.stream.tell()

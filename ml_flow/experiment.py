@@ -19,12 +19,14 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
+import logging
 from typing import Optional, Dict, Any
 
 import mlflow
+from mlflow.utils import logging_utils
 import torch
 
-from .stream_logger_context import StreamLoggerContext
+from .std_stream_capture import StdStreamCapture
 from ..task_types import TaskTypes
 from ..configuration import MLProjectConfiguration
 from ..model_summary import model_summary
@@ -32,14 +34,14 @@ from ..model_summary import model_summary
 
 class MLFlowExperiment(object):
     def __init__(
-        self,
-        run_name: str,
-        task_type: TaskTypes,
-        configuration: MLProjectConfiguration,
-        dict_args: dict,
-        run_id: str = None,
-        nested: bool = False,
-        tags: Optional[Dict[str, Any]] = None,
+            self,
+            run_name: str,
+            task_type: TaskTypes,
+            configuration: MLProjectConfiguration,
+            dict_args: dict,
+            run_id: str = None,
+            nested: bool = False,
+            tags: Optional[Dict[str, Any]] = None,
     ):
         self.run_name = run_name
         self.task_type = task_type
@@ -49,7 +51,9 @@ class MLFlowExperiment(object):
         self.nested = nested
         self.tags = tags
         self.run: Optional[mlflow.ActiveRun] = None
-        self.logger = StreamLoggerContext()
+        self.logger = StdStreamCapture()
+        self.old_mlflow_write = None
+        self.old_mlflow_flush = None
 
     def __enter__(self):
         self.logger.__enter__()
@@ -59,7 +63,7 @@ class MLFlowExperiment(object):
             run_id=self.run_id,
             run_name=self.run_name,
             nested=self.nested,
-            tags={"type": str(self.task_type), **self.tags}
+            tags={"type": str(self.task_type), **(self.tags or {})}
         )
         mlflow.log_params(self.dict_args)
         mlflow.pytorch.autolog()
@@ -70,6 +74,8 @@ class MLFlowExperiment(object):
         mlflow.log_text(self.logger.read_all(), "log.txt")
         self.run.__exit__(exc_type, exc_val, exc_tb)
         self.logger.__exit__(exc_type, exc_val, exc_tb)
+        logging_utils.MLFLOW_LOGGING_STREAM.write = self.old_mlflow_write
+        logging_utils.MLFLOW_LOGGING_STREAM.flush = self.old_mlflow_flush
 
     def report_model_summary(
             self,

@@ -20,4 +20,4 @@
 #    MA 02111-1307  USA
 #
 from .experiment import MLFlowExperiment
-from .stream_logger_context import StreamLoggerContext
+from .std_stream_capture import StdStreamCapture
