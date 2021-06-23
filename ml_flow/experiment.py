@@ -52,8 +52,6 @@ class MLFlowExperiment(object):
         self.tags = tags
         self.run: Optional[mlflow.ActiveRun] = None
         self.logger = StdStreamCapture()
-        self.old_mlflow_write = None
-        self.old_mlflow_flush = None
 
     def __enter__(self):
         self.logger.__enter__()
@@ -74,8 +72,6 @@ class MLFlowExperiment(object):
         mlflow.log_text(self.logger.read_all(), "log.txt")
         self.run.__exit__(exc_type, exc_val, exc_tb)
         self.logger.__exit__(exc_type, exc_val, exc_tb)
-        logging_utils.MLFLOW_LOGGING_STREAM.write = self.old_mlflow_write
-        logging_utils.MLFLOW_LOGGING_STREAM.flush = self.old_mlflow_flush
 
     def report_model_summary(
             self,
