@@ -59,7 +59,7 @@ class MLFlowExperiment(object):
             run_id=self.run_id,
             run_name=self.run_name,
             nested=self.nested,
-            tags={"type": str(self.task_type), **self.tags}
+            tags={"type": str(self.task_type), **(self.tags or {})}
         )
         mlflow.log_params(self.dict_args)
         mlflow.pytorch.autolog()
