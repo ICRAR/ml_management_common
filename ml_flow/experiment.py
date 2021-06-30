@@ -66,7 +66,9 @@ class MLFlowExperiment(object):
             tags={"type": str(self.task_type), **(self.tags or {})}
         )
         mlflow.log_params(self.dict_args)
-        mlflow.pytorch.autolog()
+        mlflow.pytorch.autolog(
+            log_models=False  # Only autolog metrics, which are easy to deal with. Don't autolog bigger models
+        )
         self.run.__enter__()
         return self
 
