@@ -19,16 +19,23 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
+import datetime
+import os.path
+import tempfile
+
 import torch
 import clearml
-from typing import Optional, Sequence, Union, Mapping
+from typing import Optional, Sequence, Union, Mapping, Dict, Any, List, Tuple
 
+from matplotlib.figure import Figure as MatplotlibFigure
+
+from ..base_experiment import BaseExperiment
 from ..task_types import TaskTypes
 from ..configuration import MLProjectConfiguration
 from ..model_summary import model_summary
 
 
-class ClearMLExperiment(object):
+class ClearMLExperiment(BaseExperiment):
     def __init__(
             self,
             task_name: str,
@@ -177,6 +184,7 @@ class ClearMLExperiment(object):
         self.auto_connect_frameworks = auto_connect_frameworks
         self.auto_resource_monitoring = auto_resource_monitoring
         self.auto_connect_streams = auto_connect_streams
+        self.metrics: Dict[str, List[Tuple[float, datetime.datetime]]] = {}
 
     def __enter__(self):
         self.task = clearml.Task.init(
@@ -193,10 +201,72 @@ class ClearMLExperiment(object):
             auto_connect_streams=self.auto_connect_streams,
         )
         self.task.connect_configuration(self.dict_args)
+        self.metrics.clear()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        # upload all pending metrics
+        for name, data in self.metrics.items():
+            series = map(lambda x: x[0], data)
+            self.task.logger.report_line_plot(name, {name: series}, "index", "value")
         self.task.close()
+
+    def log_text(self, text: str, artifact_path: str):
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.basename(artifact_path)
+            path = os.path.join(directory, filename)
+            with open(path, "w") as f:
+                f.write(text)
+                self.task.upload_artifact(artifact_path, path, wait_on_upload=True)
+
+    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+        self.task.upload_artifact(artifact_path, local_path, wait_on_upload=True)
+
+    def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
+        self.task.upload_artifact(artifact_path, local_directory_path, wait_on_upload=True)
+
+    def log_dict(self, dictionary: Dict[str, Any], artifact_path: str):
+        self.task.logger.report_table(
+            artifact_path,
+            "Key, Value",
+            table_plot=[(k, str(v)) for k, v in dictionary.items()]
+        )
+
+    def log_image(self, image: Union["numpy.ndarray", "PIL.Image.Image"], artifact_path: str, **kwargs):
+        self.task.logger.report_image(artifact_path, artifact_path, image=image, **kwargs)
+
+    def log_figure(self, figure: MatplotlibFigure, artifact_path: str, **kwargs):
+        self.task.logger.report_matplotlib_figure(artifact_path, artifact_path, figure, **kwargs)
+
+    def log_metric(self, key: str, value: float, **kwargs):
+        # Save metrics to be logged at the end of the run, since
+        # for some reason clearml doesn't let us log them gradually...
+        entries = self.metrics.setdefault(key, [])
+        entries.append((value, datetime.datetime.now()))
+
+    def log_metrics(self, metrics: Dict[str, float], **kwargs):
+        for k, v in metrics.items():
+            self.log_metric(k, v)
+
+    def log_model(self, pytorch_model, artifact_path: str, **kwargs):
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.basename(artifact_path)
+            path = os.path.join(directory, filename)
+            torch.save(pytorch_model, path)
+            self.task.update_output_model(path, name=artifact_path, **kwargs)
+
+    def set_tag(self, k: str, v: Any):
+        if not self.tags:
+            self.tags = []
+        self.tags.append(f"{k}={v}")
+        self.task.set_tags(self.tags)
+
+    def set_tags(self, dictionary: Dict[str, Any]):
+        if not self.tags:
+            self.tags = []
+        for k, v in dictionary.items():
+            self.tags.append(f"{k}={v}")
+        self.task.set_tags(self.tags)
 
     def report_model_summary(
         self,
@@ -220,12 +290,13 @@ class ClearMLExperiment(object):
         """
         self.task.logger.report_text(model_summary(model, input_size, batch_size, device, dtypes, dot))
 
-    def download_model(self, uri: str, model):
+    def download_model(self, uri: str, model=None):
         """
         Download a model from the clearml shared storage, from the provided uri.
         May throw an exception if there is an error downloading the model, or if the uri
         is invalid.
         :param uri: The model's UI in shared storage
+        :param model: Pre-created pytorch model to load the saved model into.
         :return: A loaded torch object containing the model weights in model["state_dict"]
         """
         model_path = clearml.Model(uri).get_local_copy()

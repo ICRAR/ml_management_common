@@ -19,20 +19,24 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
-import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 
 import mlflow
-from mlflow.utils import logging_utils
+from matplotlib.figure import Figure as MatplotlibFigure
 import torch
 
 from .std_stream_capture import StdStreamCapture
+from ..base_experiment import BaseExperiment
 from ..task_types import TaskTypes
 from ..configuration import MLProjectConfiguration
-from ..model_summary import model_summary
+
+if TYPE_CHECKING:
+    import numpy  # pylint: disable=unused-import
+    import PIL  # pylint: disable=unused-import
+    from matplotlib.figure import Figure as MatplotlibFigure  # pylint: disable=unused-import
 
 
-class MLFlowExperiment(object):
+class MLFlowExperiment(BaseExperiment):
     def __init__(
             self,
             run_name: str,
@@ -75,6 +79,39 @@ class MLFlowExperiment(object):
         self.run.__exit__(exc_type, exc_val, exc_tb)
         self.logger.__exit__(exc_type, exc_val, exc_tb)
 
+    def log_text(self, text: str, artifact_path: str):
+        mlflow.log_text(text, artifact_path)
+
+    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+        mlflow.log_artifact(local_path, artifact_path)
+
+    def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
+        mlflow.log_artifacts(local_directory_path, artifact_path)
+
+    def log_dict(self, dictionary: Any, artifact_path: str):
+        mlflow.log_dict(dictionary, artifact_path)
+
+    def log_image(self, image: Union["numpy.ndarray", "PIL.Image.Image"], artifact_path: str, **kwargs):
+        mlflow.log_image(image, artifact_path)
+
+    def log_figure(self, figure: MatplotlibFigure, artifact_path: str, **kwargs):
+        mlflow.log_figure(figure, artifact_path)
+
+    def log_metric(self, key: str, value: float, **kwargs):
+        mlflow.log_metric(key, value, step=kwargs.get("step"))
+
+    def log_metrics(self, metrics: Dict[str, float], **kwargs):
+        mlflow.log_metrics(metrics, step=kwargs.get("step"))
+
+    def log_model(self, pytorch_model, artifact_path: str, **kwargs):
+        mlflow.pytorch.log_model(pytorch_model, artifact_path, **kwargs)
+
+    def set_tag(self, k: str, v: Optional[str]):
+        mlflow.set_tag(k, v)
+
+    def set_tags(self, dictionary: Dict[str, Any]):
+        mlflow.set_tags(dictionary)
+
     def report_model_summary(
             self,
             model,
@@ -95,7 +132,12 @@ class MLFlowExperiment(object):
         :param dot:
         :return:
         """
-        mlflow.log_text(model_summary(model, input_size, batch_size, device, dtypes, dot), "model_summary.txt")
+        mlflow.log_text(self._get_model_summary(model, input_size, batch_size, device, dtypes, dot), "model_summary.txt")
 
-    def download_model(self, uri: str):
+    def download_model(self, uri: str, model=None):
+        """
+        :param uri: Model URI to load from
+        :param model: Not required for MLFlow
+        :return: Loaded model from the URI
+        """
         return mlflow.pytorch.load_model(uri)
