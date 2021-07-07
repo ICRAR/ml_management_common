@@ -23,6 +23,9 @@ import os
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Callable
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import tempfile
 
 import torch
@@ -32,11 +35,27 @@ from .model_summary import model_summary
 if TYPE_CHECKING:
     import numpy  # pylint: disable=unused-import
     import PIL  # pylint: disable=unused-import
-    from matplotlib.backends.backend_pdf import PdfPages  # pylint: disable=unused-import
     from matplotlib.figure import Figure as MatplotlibFigure  # pylint: disable=unused-import
 
 
 class BaseExperiment(ABC):
+
+    class WrappedPDFPages(PdfPages):
+        def __init__(self, parent, filename: str, artifact_name: str):
+            super().__init__(filename)
+            self.artifact_name = artifact_name
+            self.parent: BaseExperiment = parent
+            self.plot_index = 0
+
+        def savefig(self, figure=None, **kwargs):
+            super().savefig(figure, **kwargs)
+            if figure is None:
+                figure = plt.gcf()
+            title = ""
+            if figure:
+                title = figure._suptitle.get_text()
+            self.parent.log_figure(figure, f"pdf_{self.artifact_name}_{self.plot_index}_{title}")
+            self.plot_index += 1
 
     @abstractmethod
     def log_text(self, text: str, artifact_path: str):
@@ -156,7 +175,7 @@ class BaseExperiment(ABC):
         """
         with tempfile.TemporaryDirectory() as directory:
             temp_filename = os.path.join(directory, pdf_name)
-            with PdfPages(temp_filename) as pdf:
+            with BaseExperiment.WrappedPDFPages(self, temp_filename, os.path.basename(pdf_name or artifact_path or "")) as pdf:
                 yield pdf
             self.log_artifact(temp_filename, artifact_path)
 

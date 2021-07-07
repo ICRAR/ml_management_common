@@ -23,10 +23,12 @@ import datetime
 import os.path
 import tempfile
 
+import numpy as np
 import torch
 import clearml
 from typing import Optional, Sequence, Union, Mapping, Dict, Any, List, Tuple
 
+from clearml.utilities.plotly_reporter import SeriesInfo
 from matplotlib.figure import Figure as MatplotlibFigure
 
 from ..base_experiment import BaseExperiment
@@ -184,7 +186,7 @@ class ClearMLExperiment(BaseExperiment):
         self.auto_connect_frameworks = auto_connect_frameworks
         self.auto_resource_monitoring = auto_resource_monitoring
         self.auto_connect_streams = auto_connect_streams
-        self.metrics: Dict[str, List[Tuple[float, datetime.datetime]]] = {}
+        self.metric_iterations: Dict[str, int] = {}
 
     def __enter__(self):
         self.task = clearml.Task.init(
@@ -201,14 +203,10 @@ class ClearMLExperiment(BaseExperiment):
             auto_connect_streams=self.auto_connect_streams,
         )
         self.task.connect_configuration(self.dict_args)
-        self.metrics.clear()
+        self.metric_iterations.clear()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # upload all pending metrics
-        for name, data in self.metrics.items():
-            series = map(lambda x: x[0], data)
-            self.task.logger.report_line_plot(name, {name: series}, "index", "value")
         self.task.close()
 
     def log_text(self, text: str, artifact_path: str):
@@ -217,9 +215,10 @@ class ClearMLExperiment(BaseExperiment):
             path = os.path.join(directory, filename)
             with open(path, "w") as f:
                 f.write(text)
-                self.task.upload_artifact(artifact_path, path, wait_on_upload=True)
+            self.log_artifact(path, artifact_path)
 
     def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+        artifact_path = local_path.replace("/", "_").replace("\\", "_") if artifact_path is None else artifact_path
         self.task.upload_artifact(artifact_path, local_path, wait_on_upload=True)
 
     def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
@@ -239,10 +238,10 @@ class ClearMLExperiment(BaseExperiment):
         self.task.logger.report_matplotlib_figure(artifact_path, artifact_path, figure, **kwargs)
 
     def log_metric(self, key: str, value: float, **kwargs):
-        # Save metrics to be logged at the end of the run, since
-        # for some reason clearml doesn't let us log them gradually...
-        entries = self.metrics.setdefault(key, [])
-        entries.append((value, datetime.datetime.now()))
+        next = self.metric_iterations.get(key, 0) + 1
+        self.metric_iterations[key] = next
+
+        self.task.logger.report_scalar(key, key, value, next)
 
     def log_metrics(self, metrics: Dict[str, float], **kwargs):
         for k, v in metrics.items():
