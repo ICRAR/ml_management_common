@@ -67,7 +67,11 @@ class MLFlowExperiment(BaseExperiment):
             nested=self.nested,
             tags={"type": str(self.task_type), **(self.tags or {})}
         )
-        mlflow.log_params(self.dict_args)
+
+        def cap_string(s: str, length: int):
+            return s[0:length] if len(s) > length else s
+
+        mlflow.log_params({k: cap_string(str(v), 250) for k, v in self.dict_args.items()})
         mlflow.pytorch.autolog(
             log_models=False  # Only autolog metrics, which are easy to deal with. Don't autolog bigger models
         )
