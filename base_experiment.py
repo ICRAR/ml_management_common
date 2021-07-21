@@ -20,6 +20,7 @@
 #    MA 02111-1307  USA
 #
 import os
+import re
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Callable
@@ -30,6 +31,7 @@ import tempfile
 
 import torch
 
+from . import TaskTypes
 from .model_summary import model_summary
 
 if TYPE_CHECKING:
@@ -227,3 +229,37 @@ class BaseExperiment(ABC):
         not support loading the model structure from a saved model
         """
         pass
+
+    @abstractmethod
+    def find_latest_file_uri(self, name: str):
+        """
+        Search through all runs in this experiment and find the URI of latest file with
+        the given name.
+        :param name: Name of the file to search for.
+        :return: Tuple of file path and modified time, or (None, None) if no file could be found.
+        """
+        pass
+
+    @abstractmethod
+    def download_file(self, uri: str, local_path: str):
+        """
+        Downloads a file from the server and saves it locally.
+        :param uri: The file's URI
+        :param local_path: Local path to save the file to
+        :return: Local path, or None if the file could not be downloaded.
+        """
+        pass
+
+    @contextmanager
+    def download_temp_file(self, uri: str):
+        """
+        Downloads a file from the server, saves it locally, and opens it, returning the opened File object.
+        :raise Exception If the URI could not be found.
+        :param uri: URI to download
+        :return: Open file object.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            local_file = self.download_file(uri, directory)
+            if local_file is None:
+                raise Exception(f"Could not download URI {uri}")
+            yield local_file

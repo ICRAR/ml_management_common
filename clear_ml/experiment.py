@@ -21,6 +21,8 @@
 #
 import datetime
 import os.path
+import re
+import shutil
 import tempfile
 
 import numpy as np
@@ -302,3 +304,14 @@ class ClearMLExperiment(BaseExperiment):
         loaded_model_data = torch.load(model_path)
         model.load_state_dict(loaded_model_data["state_dict"])
         return model
+
+    def find_latest_file_uri(self, name: str):
+        raise Exception("Not implemented")
+
+    def download_file(self, uri: str, local_path: str):
+        path = clearml.StorageManager.get_local_copy(uri)
+        if path is None:
+            return None
+        shutil.copy(path, local_path)
+        return local_path
+

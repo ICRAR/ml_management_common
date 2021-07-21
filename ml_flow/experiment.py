@@ -19,9 +19,14 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
+import re
+import os
 from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 
 import mlflow
+from mlflow.entities import RunStatus
+from mlflow.tracking import MlflowClient, artifact_utils
+from mlflow.tracking.artifact_utils import _download_artifact_from_uri
 from matplotlib.figure import Figure as MatplotlibFigure
 import torch
 
@@ -71,7 +76,7 @@ class MLFlowExperiment(BaseExperiment):
         def cap_string(s: str, length: int):
             return s[0:length] if len(s) > length else s
 
-        mlflow.log_params({k: cap_string(str(v), 250) for k, v in self.dict_args.items()})
+        mlflow.log_params({k: cap_string(str(v), 250) for k, v in self.dict_args.items() if not isinstance(v, dict)})
         mlflow.pytorch.autolog(
             log_models=False  # Only autolog metrics, which are easy to deal with. Don't autolog bigger models
         )
@@ -145,3 +150,28 @@ class MLFlowExperiment(BaseExperiment):
         :return: Loaded model from the URI
         """
         return mlflow.pytorch.load_model(uri)
+
+    def find_latest_file_uri(self, name: str):
+        client = MlflowClient()
+        best_artifact = None
+        best_time = None
+        for run in client.list_run_infos(self.run.info.experiment_id):
+            if RunStatus.from_string(run.status) != RunStatus.FINISHED or run.end_time is None:
+                continue  # Not finished, or has no end time ?
+
+            if best_time is None or run.end_time > best_time:
+                # search for artifact with name
+                found = False
+                for artifact in client.list_artifacts(run.run_id):
+                    fname = os.path.basename(artifact.path)
+                    if fname == name:
+                        best_artifact = artifact_utils.get_artifact_uri(run.run_id, artifact.path)
+                        found = True
+                        break
+                if found:
+                    best_time = run.end_time
+
+        return best_artifact, best_time
+
+    def download_file(self, uri: str, local_path: str):
+        return _download_artifact_from_uri(uri, local_path)

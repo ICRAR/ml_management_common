@@ -19,9 +19,11 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
+from typing import Optional
+
 
 class MLProjectConfiguration(object):
-    def __init__(self, project_name: str, tracking_server: str, output_uri: str):
+    def __init__(self, project_name: str, tracking_server: Optional[str], output_uri: Optional[str]):
         """
         Create an ML Project configuration
 

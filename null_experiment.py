@@ -19,6 +19,8 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
+import re
+
 import torch
 from .base_experiment import BaseExperiment
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Callable
@@ -37,7 +39,6 @@ def log(func):
 
 
 class NullExperiment(BaseExperiment):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.logger = kwargs.get("logger", None)
@@ -94,3 +95,10 @@ class NullExperiment(BaseExperiment):
     @log
     def download_model(self, uri: str, model=None):
         pass
+
+    def find_latest_file_uri(self, name: str, run_filter: Union[str, re.Pattern]):
+        return None, None
+
+    def download_file(self, uri: str, local_path: str):
+        return None
+

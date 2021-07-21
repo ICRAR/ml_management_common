@@ -20,10 +20,13 @@
 #    MA 02111-1307  USA
 #
 import sys
+import re
 from io import StringIO
 
 
 class StdStreamCapture(object):
+    # https://stackoverflow.com/questions/19296667/remove-ansi-color-codes-from-a-text-file-using-bash
+    remove_colour_codes_regexp = re.compile(r'\x1B\[(([0-9]{1,2})?(;)?([0-9]{1,2})?)?[mKHfJ]')
 
     def __init__(self):
         self.stream = StringIO()
@@ -36,17 +39,19 @@ class StdStreamCapture(object):
 
         def patch_stderr_write(text):
             self.old_stderr_write(text)
-            if not text.startswith('\r'):
+            stripped = self.remove_colour_codes_regexp.sub("", text)
+            if not stripped.startswith('\r'):
                 # avoid needing to seek and re-write in StringIO, just skip write calls that
                 # start with \r
-                self.stream.write(text)
+                self.stream.write(stripped)
 
         def patch_stdout_write(text):
             self.old_stdout_write(text)
-            if not text.startswith('\r'):
+            stripped = self.remove_colour_codes_regexp.sub("", text)
+            if not stripped.startswith('\r'):
                 # avoid needing to seek and re-write in StringIO, just skip write calls that
                 # start with \r
-                self.stream.write(text)
+                self.stream.write(stripped)
 
         sys.stdout.write = patch_stdout_write
         sys.stderr.write = patch_stderr_write
