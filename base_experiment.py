@@ -20,24 +20,25 @@
 #    MA 02111-1307  USA
 #
 import os
-import re
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
-from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Callable
+from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib import animation
 import tempfile
 
-import torch
+import bokeh.io as bokeh_io
 
-from . import TaskTypes
 from .model_summary import model_summary
 
 if TYPE_CHECKING:
     import numpy  # pylint: disable=unused-import
     import PIL  # pylint: disable=unused-import
     from matplotlib.figure import Figure as MatplotlibFigure  # pylint: disable=unused-import
+    from bokeh.document import Document  # pylint: disable=unused-import
+    from matplotlib.animation import AbstractMovieWriter  # pylint: disable=unused-import
 
 
 class BaseExperiment(ABC):
@@ -58,6 +59,23 @@ class BaseExperiment(ABC):
                 title = figure._suptitle.get_text()
             self.parent.log_figure(figure, f"pdf_{self.artifact_name}_{self.plot_index}_{title}")
             self.plot_index += 1
+
+    class BokehWrapper(object):
+        def __init__(self, doc: "Document", temp_directory: str):
+            self.doc = doc
+            self.temp_directory = temp_directory
+            self.files: list[str] = []
+            self.output_file_name: Optional[str] = None
+
+        def output_file(self, name: str, title="Bokeh Plot", mode=None):
+            self.output_file_name = os.path.join(self.temp_directory, name)
+            bokeh_io.output_file(self.output_file_name, title, mode)
+
+        def save(self, obj, filename=None, resources=None, title=None, template=None, state=None, **kwargs):
+            if filename is not None:
+                filename = os.path.join(self.temp_directory, filename)
+                self.files.append(filename)
+            bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
 
     @abstractmethod
     def log_text(self, text: str, artifact_path: str):
@@ -181,13 +199,76 @@ class BaseExperiment(ABC):
                 yield pdf
             self.log_artifact(temp_filename, artifact_path)
 
+    @contextmanager
+    def log_video(
+            self,
+            video_name: str,
+            figure: "MatplotlibFigure",
+            artifact_path: Optional[str] = None,
+            fps=5,
+            codec=None,
+            bitrate=None,
+            extra_args=None,
+            metadata=None,
+            dpi=None
+    ) -> Generator["AbstractMovieWriter", Any, Any]:
+        """
+        Create a matplotlib video writer to write out a video file. Uses FFMpegWriter.
+        :param video_name: The name of the video.
+        :param figure: The figure to use to write the video. Passed to FFMpegWriter.saving.
+        :param artifact_path: Optional artifact path. If not provided, the video name will be used
+        :param fps: Frame rate of the animation in frames per second,
+        :param codec: Video codec to use.
+        :param bitrate: Bitrate to use.
+        :param extra_args: Extra args for FFMpeg.
+        :param metadata: Dictionary of video metadata,
+        :param dpi: DPI of the figure when writing the video.
+        :return: Context that produces a matplotlib video writer. The video is automatically saved on context exit.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            temp_filename = os.path.join(directory, video_name)
+            writer = animation.FFMpegWriter(
+                fps=fps, codec=codec, bitrate=bitrate, extra_args=extra_args, metadata=metadata
+            )
+            with writer.saving(figure, temp_filename, dpi=dpi) as video:
+                yield video
+            self.log_artifact(temp_filename, artifact_path)
+
+    @contextmanager
+    def log_bokeh(self):
+        """
+        Creates a context to log bokeh plots to.
+        The save and output_file bokeh functions should be called on the returned wrapper instead of
+        the bokeh package.
+        Each plot is uploaded with whatever name it is saved with.
+        All plots are saved locally to a temporary directory.
+        :return: Context that boken plots can be logged to.
+        """
+        doc: "Document" = bokeh_io.curdoc()
+        old_doc_state = doc.to_json_string()
+        old_doc_title = doc.title
+
+        doc.clear()
+
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                wrapper = BaseExperiment.BokehWrapper(doc, directory)
+                yield wrapper
+                for file in wrapper.files:
+                    self.log_artifact(file)
+                if wrapper.output_file_name is not None:
+                    self.log_artifact(wrapper.output_file_name)
+        finally:
+            doc.from_json_string(old_doc_state)
+            doc.title = old_doc_title
+
     @abstractmethod
     def report_model_summary(
             self,
             model,
             input_size,
             batch_size=-1,
-            device=torch.device("cuda:0"),
+            device=None,
             dtypes=None,
             dot=None,
     ):
@@ -208,7 +289,7 @@ class BaseExperiment(ABC):
             model,
             input_size,
             batch_size=-1,
-            device=torch.device("cuda:0"),
+            device=None,
             dtypes=None,
             dot=None
     ):
