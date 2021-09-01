@@ -89,10 +89,10 @@ def create_experiment(name: str, type: TaskTypes, configuration_path: Optional[s
                 )
                 server_type = yaml.get("server_type", None)
                 if server_type == "mlflow":
-                    from src.ml_management_common.ml_flow import MLFlowExperiment
+                    from .ml_flow import MLFlowExperiment
                     Experiment = MLFlowExperiment
                 elif server_type == "clearml":
-                    from src.ml_management_common.clear_ml import ClearMLExperiment
+                    from .clear_ml import ClearMLExperiment
                     Experiment = ClearMLExperiment
                 else:
                     # Invalid or intentionally omitted experiment
