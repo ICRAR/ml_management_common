@@ -23,7 +23,7 @@ from typing import Optional
 
 
 class MLProjectConfiguration(object):
-    def __init__(self, project_name: str, tracking_server: Optional[str], output_uri: Optional[str]):
+    def __init__(self, project_name: str, tracking_server: Optional[str] = None, output_uri: Optional[str] = None):
         """
         Create an ML Project configuration
 
