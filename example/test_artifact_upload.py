@@ -46,31 +46,36 @@ def main():
 
     expr_times = []
     times = []
-    for i in range(1):
+    for i in range(4):
         start_expr = time.time()
         print(f"Test Experiment {i} @ {start_expr}")
         with MLFlowExperiment(
-                "test_artifact_upload",
-                TaskTypes.testing,
-                MLProjectConfiguration(
-                    project_name="test_artifact_upload",
-                    tracking_server="http://130.95.218.59:5000",
-                    output_uri="/mnt/mlflow_artifact_nfs/artifacts"
-                ),
-                {}
+            "test_artifact_upload",
+            TaskTypes.testing,
+            MLProjectConfiguration(
+                project_name="test_artifact_upload",
+                tracking_server="http://130.95.218.59:5000",
+                output_uri="/mnt/mlflow_artifact_nfs/artifacts"
+            ),
+            {}
         ) as experiment:
-            for a in range(1):
+            for a in range(4):
                 start = time.time()
                 print(f"Starting upload {a} @ {start}")
                 experiment.log_artifact(large_file)
                 end = time.time()
                 print(f"Ending upload {a} @ {end}: Took {end - start}")
                 times.append(end - start)
+                print(f"Doing some other things...")
+                cnt = 0
+                for i in range(100000):
+                    cnt += i
+                print(f"Done {cnt}")
         end_expr = time.time()
         print(f"End test {i} @ {end_expr}: Took {end_expr - start_expr}")
         expr_times.append(end_expr - start_expr)
     print(f"Ave expr: {reduce(lambda x, y: x + y, expr_times) / len(expr_times)}")
-    print(f"Ave: {reduce(lambda x, y: x + y, times) / len(times)}")
+    print(f"Ave arti: {reduce(lambda x, y: x + y, times) / len(times)}")
 
 
 if __name__ == "__main__":

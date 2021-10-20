@@ -42,15 +42,17 @@ if TYPE_CHECKING:
 
 class MLFlowExperiment(BaseExperiment):
     def __init__(
-            self,
-            run_name: str,
-            task_type: TaskTypes,
-            configuration: MLProjectConfiguration,
-            dict_args: dict,
-            run_id: str = None,
-            nested: bool = False,
-            tags: Optional[Dict[str, Any]] = None,
+        self,
+        run_name: str,
+        task_type: TaskTypes,
+        configuration: MLProjectConfiguration,
+        dict_args: dict,
+        run_id: str = None,
+        nested: bool = False,
+        tags: Optional[Dict[str, Any]] = None,
+        **kwargs
     ):
+        super().__init__(**kwargs)
         self.run_name = run_name
         self.task_type = task_type
         self.configuration = configuration
@@ -80,9 +82,11 @@ class MLFlowExperiment(BaseExperiment):
             log_models=False  # Only autolog metrics, which are easy to deal with. Don't autolog bigger models
         )
         self.run.__enter__()
+        super().__enter__()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        super().__exit__(exc_type, exc_val, exc_tb)  # shutdown thread pool first to ensure all artifacts are uploaded
         mlflow.log_text(self.logger.read_all(), "log.txt")
         self.run.__exit__(exc_type, exc_val, exc_tb)
         self.logger.__exit__(exc_type, exc_val, exc_tb)
@@ -90,10 +94,10 @@ class MLFlowExperiment(BaseExperiment):
     def log_text(self, text: str, artifact_path: str):
         mlflow.log_text(text, artifact_path)
 
-    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+    def _log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
         mlflow.log_artifact(local_path, artifact_path)
 
-    def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
+    def _log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
         mlflow.log_artifacts(local_directory_path, artifact_path)
 
     def log_dict(self, dictionary: Any, artifact_path: str):

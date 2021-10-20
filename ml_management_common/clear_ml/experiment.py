@@ -53,6 +53,7 @@ class ClearMLExperiment(BaseExperiment):
             auto_connect_frameworks: Union[bool, Mapping[str, bool]] = True,
             auto_resource_monitoring=True,
             auto_connect_streams: Union[bool, Mapping[str, bool]] = True,
+            **kwargs
     ):
         """
         Create a clearml experiment. This should be used inside a `with` block.
@@ -176,6 +177,7 @@ class ClearMLExperiment(BaseExperiment):
                auto_connect_streams={'stdout': True, 'stderr': True, 'logging': False}
 
         """
+        super().__init__(**kwargs)
         self.task_name = task_name
         self.task_type = task_type
         self.configuration = configuration
@@ -191,6 +193,7 @@ class ClearMLExperiment(BaseExperiment):
         self.metric_iterations: Dict[str, int] = {}
 
     def __enter__(self):
+        super().__enter__()
         self.task = clearml.Task.init(
             project_name=self.configuration.project_name,
             task_name=self.task_name,
@@ -210,6 +213,7 @@ class ClearMLExperiment(BaseExperiment):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.task.close()
+        super().__exit__(exc_type, exc_val, exc_tb)
 
     def log_text(self, text: str, artifact_path: str):
         with tempfile.TemporaryDirectory() as directory:
@@ -219,11 +223,11 @@ class ClearMLExperiment(BaseExperiment):
                 f.write(text)
             self.log_artifact(path, artifact_path)
 
-    def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+    def _log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
         artifact_path = local_path.replace("/", "_").replace("\\", "_") if artifact_path is None else artifact_path
         self.task.upload_artifact(artifact_path, local_path, wait_on_upload=True)
 
-    def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
+    def _log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
         self.task.upload_artifact(artifact_path, local_directory_path, wait_on_upload=True)
 
     def log_dict(self, dictionary: Dict[str, Any], artifact_path: str):

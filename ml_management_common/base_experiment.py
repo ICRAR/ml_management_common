@@ -20,6 +20,7 @@
 #    MA 02111-1307  USA
 #
 import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator
@@ -77,6 +78,23 @@ class BaseExperiment(ABC):
                 self.files.append(filename)
             bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
 
+    def __init__(self, upload_threads=2):
+        """
+        :param upload_threads: If non zero, uploads will be queued and performed in separate threads.
+        Threads are used because the upload is IO bound and is sped up significantly despite GIL.
+        """
+        self._upload_threads = upload_threads
+        self._upload_thread_pool: ThreadPoolExecutor = None
+
+    def __enter__(self):
+        if self._upload_threads > 0:
+            self._upload_thread_pool = ThreadPoolExecutor(max_workers=self._upload_threads)
+            self._upload_thread_pool.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._upload_thread_pool:
+            self._upload_thread_pool.__exit__(exc_type, exc_val, exc_tb)
+
     @abstractmethod
     def log_text(self, text: str, artifact_path: str):
         """
@@ -87,7 +105,6 @@ class BaseExperiment(ABC):
         """
         pass
 
-    @abstractmethod
     def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
         """
         Log an artifact.
@@ -95,12 +112,40 @@ class BaseExperiment(ABC):
         :param artifact_path: Optional artifact path to log the file to.
         If not provided, the artifact will be logged with its local file name.
         """
-        pass
+        if self._upload_thread_pool:
+            self._upload_thread_pool.submit(self._log_artifact, local_path, artifact_path)
+        else:
+            self._log_artifact(local_path, artifact_path)
 
     @abstractmethod
+    def _log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+        """
+        Log an artifact.
+        To be implemented by the inheritor.
+        :param local_path: Path to the artifact to upload.
+        :param artifact_path: Optional artifact path to log the file to.
+        If not provided, the artifact will be logged with its local file name.
+        """
+        pass
+
     def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
         """
         Log a folder of artifacts.
+        :param local_directory_path: Local folder containing artifacts to log.
+        All files in the directory are logged as artifacts
+        :param artifact_path: Optional artifact base path to log the files to.
+        If not provided, the artifacts will be logged with their local file names.
+        """
+        if self._upload_thread_pool:
+            self._upload_thread_pool.submit(self._log_artifacts, local_directory_path, artifact_path)
+        else:
+            self._log_artifacts(local_directory_path, artifact_path)
+
+    @abstractmethod
+    def _log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
+        """
+        Log a folder of artifacts.
+        To be implemented by the inheritor.
         :param local_directory_path: Local folder containing artifacts to log.
         All files in the directory are logged as artifacts
         :param artifact_path: Optional artifact base path to log the files to.

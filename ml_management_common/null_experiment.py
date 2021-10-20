@@ -56,6 +56,14 @@ class NullExperiment(BaseExperiment):
         pass
 
     @log
+    def _log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+        pass
+
+    @log
+    def _log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
+        pass
+
+    @log
     def log_dict(self, dictionary: Any, artifact_path: str):
         pass
 
