@@ -23,8 +23,8 @@ import argparse
 from functools import reduce
 
 import time
-from ml_management_common import TaskTypes, MLProjectConfiguration
-from ml_management_common.ml_flow import MLFlowExperiment
+from .. import TaskTypes, MLProjectConfiguration
+from ..ml_flow import MLFlowExperiment
 
 
 def parse_args():

@@ -21,23 +21,17 @@
 #
 from argparse import ArgumentParser
 
-import mlflow.pytorch
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import tempfile
-import os
 from torch.utils.data import Dataset, DataLoader
-from project_configuration import project_configuration
 from example_trainer_model import Model
 import matplotlib.pyplot as plt
 from math import cos, pi
-from matplotlib.backends.backend_pdf import PdfPages
 
-from ml_management_common.ml_flow import MLFlowExperiment
-from ml_management_common import TaskTypes
+from ..ml_flow import MLFlowExperiment
+from .. import TaskTypes, MLProjectConfiguration
 
-from ml_management_common.clear_ml import ClearMLExperiment
 
 class SampleDataset(Dataset):
 
@@ -55,6 +49,8 @@ class SampleDataset(Dataset):
 
 
 def arguments(parser: ArgumentParser):
+    parser.add_argument('--tracking-server', type=str)
+    parser.add_argument('--output_uri', type=str)
     return parser
 
 
@@ -68,8 +64,12 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() and (dict_args.get("gpus", 0) > 0) else "cpu")
 
-    #with MLFlowExperiment("main", TaskTypes.application, project_configuration, dict_args) as experiment:
-    with ClearMLExperiment("main", TaskTypes.application, project_configuration, dict_args) as experiment:
+    configuration = MLProjectConfiguration(
+        "Example",
+        dict_args.get("tracking_server", ""),
+        dict_args.get("output_uri", "")
+    )
+    with MLFlowExperiment("main", TaskTypes.application, configuration, dict_args) as experiment:
         model = Model(**dict_args)
         model.to(device)
         experiment.report_model_summary(model, (64, ))
