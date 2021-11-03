@@ -24,7 +24,7 @@ Load source files onto the NGAS server.
   - Raw source files (NGAS)
   - Raw source files run (MLFlow)
 
-![Load raw source files image](./pipeline_images/load_raw_source_files.drawio.svg)
+![Load raw source files image](documentation/pipeline_images/load_raw_source_files.drawio.svg)
 
 ### Preprocess Raw Source Files
 Preprocess a set of loaded source files, from NGAS, and store them back on NGAS.
@@ -35,7 +35,7 @@ Preprocess a set of loaded source files, from NGAS, and store them back on NGAS.
   - Preprocessed files (NGAS)
   - Preprocess files run (MLFLow)
 
-![Preprocess raw source files image](./pipeline_images/preprocess_raw_source_files.drawio.svg)
+![Preprocess raw source files image](documentation/pipeline_images/preprocess_raw_source_files.drawio.svg)
 
 ### Train Model
 Take a set of preprocessed data and produce a model from it.
@@ -46,7 +46,7 @@ Take a set of preprocessed data and produce a model from it.
   - Trained model (MLFlow)
   - Training run (MLFlow)
 
-![Train model image](./pipeline_images/train_model.drawio.svg)
+![Train model image](documentation/pipeline_images/train_model.drawio.svg)
 
 ### Retrain Model
 Take a model, train it on more data, and produce a new model from it.
@@ -58,7 +58,7 @@ Take a model, train it on more data, and produce a new model from it.
   - Trained model (MLFlow)
   - Training run (MLFlow)
 
-![Retrain model image](./pipeline_images/retrain_model.drawio.svg)
+![Retrain model image](documentation/pipeline_images/retrain_model.drawio.svg)
 
 ### Inferencing
 Take a trained model and a set of preprocessed data and produce an inference output from it
@@ -69,7 +69,7 @@ Take a trained model and a set of preprocessed data and produce an inference out
   - Inferencing Output (NGAS)
   - Inferencing run (MLFlow)
 
-![Inferencing image](./pipeline_images/inferencing.drawio.svg)
+![Inferencing image](documentation/pipeline_images/inferencing.drawio.svg)
 
 ## Web server
 Results generated via inferencing or training should be accessible via a web server.
