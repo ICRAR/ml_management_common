@@ -71,7 +71,6 @@ Take a trained model and a set of preprocessed data and produce an inference out
 
 ![Inferencing image](./pipeline_images/inferencing.drawio.svg)
 
-
 ## Web server
 Results generated via inferencing or training should be accessible via a web server.
 This server will be publicly accessible and will serve files from the MLFlow runs or NGAS server.
@@ -80,10 +79,19 @@ This server will be publicly accessible and will serve files from the MLFlow run
 - MLFlow can support writing artifacts to different types of backend storage, we can probably set it up to use NGAS as a backend.
 - MLFlow stores models with versioning, so we can update an existing model with re-trained versions, and all downstream inferencing tasks will use the updated model automatically.
 - This repository will contain all the setup scripts needed to fully build and deploy the server.
+- Training will need to support being performed as a slurm job.
 - Reading any files from the MLFLow/NGAS server will need to check a local cache server first. 
   - If the file is found in the cache, it should not be downloaded again.
   - If the cached file is out of date, it should only be requested from the server if the user is not using a bad connection (i.e. Kevin at home).
 - The individual tasks that are used by DALIUGE will need to be executable directly as scripts (so we can run them on our own computers as we need), or via some sort of worker that can submit a slurm task to a supercomputer and upload the results.
 - For the BOM work at least, inferencing tasks need to be submitted automatically as new data is available via an FTP server.
   - The model will probably need to be re-trained regularly too.
-- 
+
+## TODO
+- Document setup process and create server setup for
+  - Docker
+  - NGAS
+  - Daliuge
+- Investigate creating an NGAS storage backend for MLFlow
+- Create skeleton python scripts to perform each of the tasks
+- Install and investigate using Daliuge to create the task graphs
