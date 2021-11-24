@@ -19,11 +19,19 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 #    MA 02111-1307  USA
 #
-from typing import Optional
+from typing import Optional, Union
+
+from ml_management_common.ngas import NGASClient, NGASConfiguration
 
 
 class MLProjectConfiguration(object):
-    def __init__(self, project_name: str, tracking_server: Optional[str] = None, output_uri: Optional[str] = None):
+    def __init__(
+        self,
+        project_name: str,
+        tracking_server: Optional[str] = None,
+        output_uri: Optional[str] = None,
+        ngas_client: Union[NGASClient, NGASConfiguration, None] = None,
+    ):
         """
         Create an ML Project configuration
 
@@ -33,8 +41,10 @@ class MLProjectConfiguration(object):
             ClearML uses `clearml.conf` in your user directory instead.
         :param str output_uri: The location for output models and other artifacts. Not required for MLFlow, but is
             required for ClearML.
+        :param ngas_client: The NGAS client to use. If not provided here, then a client can be provided to Experiment.ngas()
         """
         self.project_name = project_name
         self.tracking_server = tracking_server
         self.output_uri = output_uri
+        self.ngas_client = ngas_client
 

@@ -177,7 +177,7 @@ class ClearMLExperiment(BaseExperiment):
                auto_connect_streams={'stdout': True, 'stderr': True, 'logging': False}
 
         """
-        super().__init__(**kwargs)
+        super().__init__(ngas_client=configuration.ngas_client, **kwargs)
         self.task_name = task_name
         self.task_type = task_type
         self.configuration = configuration

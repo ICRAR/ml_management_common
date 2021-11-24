@@ -52,7 +52,7 @@ class MLFlowExperiment(BaseExperiment):
         tags: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
-        super().__init__(**kwargs)
+        super().__init__(ngas_client=configuration.ngas_client, **kwargs)
         self.run_name = run_name
         self.task_type = task_type
         self.configuration = configuration
@@ -78,9 +78,14 @@ class MLFlowExperiment(BaseExperiment):
             return s[0:length] if len(s) > length else s
 
         mlflow.log_params({k: cap_string(str(v), 250) for k, v in self.dict_args.items() if not isinstance(v, dict)})
-        mlflow.pytorch.autolog(
-            log_models=False  # Only autolog metrics, which are easy to deal with. Don't autolog bigger models
-        )
+        try:
+            mlflow.pytorch.autolog(
+                log_models=False  # Only autolog metrics, which are easy to deal with. Don't autolog bigger models
+            )
+        except ModuleNotFoundError as e:
+            # this is an acceptable error, as it means we are not running on a pytorch environment
+            print("Pytorch was not found in the current venv, mlflow.pytorch.autolog will not be enabled")
+
         self.run.__enter__()
         super().__enter__()
         return self
@@ -90,6 +95,9 @@ class MLFlowExperiment(BaseExperiment):
         mlflow.log_text(self.logger.read_all(), "log.txt")
         self.run.__exit__(exc_type, exc_val, exc_tb)
         self.logger.__exit__(exc_type, exc_val, exc_tb)
+
+    def unique_run_id(self):
+        return self.run.info.run_uuid
 
     def log_text(self, text: str, artifact_path: str):
         mlflow.log_text(text, artifact_path)

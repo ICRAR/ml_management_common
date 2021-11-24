@@ -48,6 +48,10 @@ class NGASResponse(object):
         self.http_url = url
         self.http_status = status
 
+    @property
+    def http_ok(self):
+        return 200 <= self.http_status < 300
+
 
 class NGASStatusResponse(NGASResponse):
     def __init__(self, url: str, status: int, body: ElementTree):
@@ -65,16 +69,15 @@ class NGASStatusResponse(NGASResponse):
     def __repr__(self):
         return f"NGASStatusResponse(url='{self.http_url}', status='{self.http_status}', date={self.date}, version={self.version}, host_id='{self.host_id}', message='{self.message}', status='{self.status}', state='{self.state}', sub_state='{self.sub_state}')"
 
-    @property
-    def http_ok(self):
-        return 200 <= self.http_status < 300
 
-
-class NGASFileResponse(object):
+class NGASFileResponse(NGASResponse):
     def __init__(self, url: str, status: int, filename: str, data_iter: Iterator):
         super().__init__(url, status)
         self.filename = filename
         self.data_iter = data_iter
+
+    def __repr__(self):
+        return f"NGASFileResponse(url='{self.http_url}', status='{self.http_status}', filename='{self.filename}')"
 
     def write(self, filename: Optional[str] = None):
         final_filename = self.filename if filename is None else filename
@@ -190,16 +193,37 @@ class NGASClient(object):
     def archive(
         self,
         file: Union[str, os.PathLike, io.IOBase],
-        mime_type: Optional[str] = None,
+        filename: Optional[str] = None,
+        mime_type="application/octet-stream",
         asyncronous=False,
-        no_versioning=False,
+        versioning=True,
+        file_version: Optional[int] = None,
         q_archive=False,
         **kwargs
     ):
+        """
+
+        :param file: File, or path to file to archive.
+        If the file is a remote file (http, ftp), it will be downloaded by the NGAS server and stored with
+        the filename it has.
+        Local files will be stored with their local file names, or the override filename if given
+        :param filename: Override filename to use when storing a local file. If provided, this name will
+        be used on the NGAS server instead of the file's name.
+        :param mime_type:
+        :param asyncronous:
+        :param versioning:
+        :param file_version:
+        :param q_archive:
+        :param kwargs:
+        :return:
+        """
+
         params = {
             "async": '1' if asyncronous else '0',
-            "no_versioning": '1' if no_versioning else '0',
+            "versioning": '1' if versioning else '0',
         }
+        if file_version is not None:
+            params["file_version"] = str(file_version)
         command = NGASCommand.QARCHIVE if q_archive else NGASCommand.ARCHIVE
 
         if isinstance(file, str):
@@ -207,7 +231,7 @@ class NGASClient(object):
                 params["filename"] = file
                 if mime_type is not None:
                     params["mime_type"] = mime_type
-                return self._ngas_request_xml(command, params)
+                return self._ngas_request_xml(command, params), os.path.basename(file)
 
         close_file = False
         if not isinstance(file, io.IOBase):
@@ -217,14 +241,16 @@ class NGASClient(object):
 
         # File is now guaranteed to be an open IOBase
         try:
-            params["filename"] = os.path.basename(file.name)
+            fname = filename if filename is not None else os.path.basename(file.name)
+            params["filename"] = fname
             return self._ngas_request_xml(
                 command,
                 params,
+                method="POST",
                 data=file,
                 headers={'Content-Type': mime_type or "ngas/archive-request"},
                 **kwargs
-            )
+            ), fname
         finally:
             if close_file:
                 file.close()
@@ -446,7 +472,7 @@ class NGASClient(object):
         response_file_chunk_size=8192,
         **kwargs
     ):
-        response, url_str = self._ngas_request(command, headers, params, method, stream=True, **kwargs)
+        response, url_str = self._ngas_request(command, params, headers, method, stream=True, **kwargs)
         disposition = parse_http_kv_list(response.headers.get("Content-Disposition", ""))
         iterator = response.iter_content(chunk_size=response_file_chunk_size)
         return NGASFileResponse(url_str, response.status_code, disposition.get("filename", ""), iterator)
@@ -459,7 +485,7 @@ class NGASClient(object):
         method="GET",
         **kwargs
     ):
-        response, url_str = self._ngas_request(command, headers, params, method, **kwargs)
+        response, url_str = self._ngas_request(command, params, headers, method, **kwargs)
         return NGASStatusResponse(url_str, response.status_code, xmlparse(StringIO(response.text)))
 
     def _ngas_request(
@@ -473,7 +499,8 @@ class NGASClient(object):
         url = urlparse(f"{self.config.protocol}://{self.config.host}:{self.config.port}/{command}")
 
         if params is not None:
-            url.query = '&'.join([f'{k}={v}' for k, v in params.items()])
+            parts = [f'{k}={v}' for k, v in params.items()]
+            url = url._replace(query='&'.join(parts))
 
         url_str: str = urlunparse(url)
         response = requests.request(
@@ -497,8 +524,14 @@ class NGASClient(object):
 
 def main():
     client = NGASClient(NGASConfiguration(host="130.95.218.14"))
-    ngas_status = client.status()
-    print(ngas_status)
+    try:
+        print(client.status())
+        #print(client.archive("/home/sam/get-pip.py", mime_type="application/octet-stream"))
+        stream = client.retrieve("get-pip.py")
+        print(stream)
+        stream.write("/home/sam/get-pip-response.py")
+    except NGASException as e:
+        print(e.status)
 
 
 if __name__ == '__main__':
