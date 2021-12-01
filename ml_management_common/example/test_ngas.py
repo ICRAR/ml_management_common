@@ -21,14 +21,8 @@
 #
 from ml_management_common import TaskTypes, MLProjectConfiguration
 from ml_management_common.ml_flow import MLFlowExperiment
-import random
-import string
 
 from ml_management_common.ngas import NGASConfiguration
-
-
-def random_filename():
-    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(8))
 
 
 def main():
@@ -43,7 +37,8 @@ def main():
             ),
             {}
     ) as experiment:
-        experiment.ngas().log_artifact("/home/sam/get-pip.py", "get_pip_xxx")
+        #experiment.ngas().log_artifact("/home/sam/get-pip.py", "get_pip_xxx")
+        experiment.ngas().log_artifact("/home/sam/get-pip.py", "get_pip_xxx", ngas_name="get-pip")
 
 
 def main2():
@@ -58,12 +53,13 @@ def main2():
             ),
             {}
     ) as experiment:
-        experiment.ngas().download_file(
-            "/mnt/mlflow_artifact_nfs/1/6e4485edfd364446aa05731a0a25d309/artifacts/get_pip_xxx/get-pip.py",
-            "/home/sam/downloaded-get-pip.py"
-        )
+        #experiment.ngas().download_file(
+        #    "/mnt/mlflow_artifact_nfs/1/6e4485edfd364446aa05731a0a25d309/artifacts/get_pip_xxx/get-pip.py",
+        #    "/home/sam/downloaded-get-pip.py"
+        #)
+        experiment.ngas().download_named_file("get-pip", "/home/sam/downloaded-get-pip.py")
 
 
 if __name__ == '__main__':
-    # main()
+    #main()
     main2()

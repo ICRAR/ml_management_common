@@ -24,7 +24,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor, Future
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
-from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator, Callable
+from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator, Callable, TypeVar
+from typing_extensions import ParamSpec
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -42,6 +43,9 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure as MatplotlibFigure  # pylint: disable=unused-import
     from bokeh.document import Document  # pylint: disable=unused-import
     from matplotlib.animation import AbstractMovieWriter  # pylint: disable=unused-import
+
+P = ParamSpec('P')
+T = TypeVar('T')
 
 
 class BaseExperiment(ABC):
@@ -89,6 +93,12 @@ class BaseExperiment(ABC):
                 self.ngas_client = NGASClient(ngas_client)
 
         def download_file(self, artifact_uri: str, local_path: str):
+            """
+            Download a file from NGAS that was previously uploaded to NGAS and MLFlow via log_artifact or log_artifacts.
+            :param artifact_uri: The URI of the artifact to download. This will be the JSON document in MLFlow.
+            :param local_path: Local path to save the downloaded file to.
+            :return:
+            """
             # We expect the downloaded file from the machine learning server to be a JSON file created by
             # _log_artifact.
             with self.parent.download_temp_file(artifact_uri) as f:
@@ -97,26 +107,72 @@ class BaseExperiment(ABC):
                         loaded_json = json.load(json_file)
                     if not isinstance(loaded_json, dict):
                         raise ValueError(f"The downloaded file {artifact_uri} was not a JSON object.")
-                    path = loaded_json["ngas_path"]
                     # download this path from NGAS to the provided local path
-                    self.ngas_client.retrieve(path).write(local_path)
+                    self.ngas_client.retrieve(loaded_json["ngas_path"]).write(local_path)
 
                 except json.JSONDecodeError:
                     raise ValueError(f"The downloaded file {artifact_uri} was not valid JSON.")
                 except KeyError:
                     raise ValueError(f"The downloaded file {artifact_uri} did not contain a 'ngas_path' key.")
 
-        def log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
-            self.parent._thread_execute(self._log_artifact, local_path, artifact_path)
+        def download_named_file(self, ngas_name: str, local_path: str, file_version: Optional[int] = None):
+            """
+            Download a file directly from NGAS by name.
 
-        def _log_artifact(self, local_path: str, artifact_path: Optional[str] = None):
+            This can be used to download the the latest version of a file, or a specific version of a file, that was
+            uploaded with log_artifact with an ngas_name specified.
+
+            :param ngas_name: The name of the file to download.
+            :param local_path: Local path to save the downloaded file to.
+            :param file_version: Optional version of the file to download.
+            """
+            self.ngas_client.retrieve(ngas_name, file_version).write(local_path)
+
+        def log_artifact(
+            self,
+            local_path: str,
+            artifact_path: Optional[str] = None,
+            ngas_name: Optional[str] = None,
+            ngas_version: Optional[int] = None
+        ):
+            """
+            Log an artifact to the NGAS server.
+
+            This will upload the given file to the NGAS server, and leave a link to the file in MLFlow via a JSON
+            document so that the file can be retrieved from NGAS as needed.
+
+            :param local_path: The path to the artifact on the local machine.
+            :param artifact_path: Artifact path to use in MLFlow and NGAS. This is inserted before the basename of the
+                local_path. If None, the basename of the local_path is used directly.
+            :param ngas_name If provided, the artifact will be stored on the server using this exact name.
+                This allows you to write files to a specific name to retrieve them with download_named_file.
+            :param ngas_version: If provided, the artifact will be stored on the server using this exact version.
+                Otherwise, the artifacts will be logged as a new version.
+                Only useful when using ngas_name to specify the exact name to save the artifact to.
+            """
+            return self.parent._thread_execute(self._log_artifact, local_path, artifact_path, ngas_name, ngas_version)
+
+        def _log_artifact(
+            self,
+            local_path: str,
+            artifact_path: Optional[str] = None,
+            ngas_name: Optional[str] = None,
+            ngas_version: Optional[int] = None
+        ):
             # upload artifact to NGAS
             local_path_base = os.path.basename(local_path)
-            if artifact_path is not None:
+            if ngas_name is not None:
+                # Use the exact specified name
+                ngas_path = ngas_name
+            elif artifact_path is not None:
                 ngas_path = os.path.join(self.parent.unique_run_id(), artifact_path, local_path_base)
             else:
                 ngas_path = os.path.join(self.parent.unique_run_id(), local_path_base)
-            result, filename = self.ngas_client.archive(local_path, ngas_path)
+            result, filename = self.ngas_client.archive(
+                local_path,
+                ngas_path,
+                file_version=ngas_version
+            )
             ngas_storage_info = vars(result)
             ngas_storage_info["ngas_path"] = filename
             with tempfile.TemporaryDirectory() as temp_directory:
@@ -128,7 +184,17 @@ class BaseExperiment(ABC):
                 self.parent._log_artifact(tempfilename, artifact_path)
 
         def log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
-            self.parent._thread_execute(self._log_artifacts, local_directory_path, artifact_path)
+            """
+            Log a directory of artifacts to the NGAS server.
+
+            This will upload all files in the given directory to the NGAS server, and leave upload links to each
+            file in MLFlow via a JSON document so that the files can be retrieved from NGAS as needed.
+
+            :param local_directory_path: The path to the directory to upload.
+            :param artifact_path: Artifact path to use in MLFlow and NGAS. This is inserted before the basename of each
+                file in the local_directory_path. If None, the basename of each file is used directly.
+            """
+            return self.parent._thread_execute(self._log_artifacts, local_directory_path, artifact_path)
 
         def _log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
             for f in os.listdir(local_directory_path):
@@ -155,6 +221,12 @@ class BaseExperiment(ABC):
             self._upload_thread_pool.__exit__(exc_type, exc_val, exc_tb)
 
     def ngas(self, ngas_client: Union[NGASClient, NGASConfiguration, None] = None):
+        """
+        Create an NGAS interface using the given NGASClient, NGASConfiguration, or the NGASClient / NGASConfiguration
+        provided the the Experiment constructor.
+        :param ngas_client: The NGASClient or NGASConfiguration to use.
+        :return: An NGAS interface for logging artifacts to NGAS.
+        """
         if self._ngas_client is None and ngas_client is None:
             raise ValueError("NGAS client needs to be passed to Experiment constructor, or to ngas() call")
         return self.NGASWrapper(self, ngas_client or self._ngas_client)
@@ -166,16 +238,11 @@ class BaseExperiment(ABC):
         """
         pass
 
-    def _thread_execute_done(self, future: Future):
-        e = future.exception()
-        if e:
-            raise e
-
-    def _thread_execute(self, function: Callable, *args, **kwargs):
+    def _thread_execute(self, function: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Union[Future[T], T]:
         if self._upload_thread_pool:
-            self._upload_thread_pool.submit(function, *args, **kwargs).add_done_callback(self._thread_execute_done)
+            return self._upload_thread_pool.submit(function, *args, **kwargs)
         else:
-            function(*args, **kwargs)
+            return function(*args, **kwargs)
 
     @abstractmethod
     def log_text(self, text: str, artifact_path: str):
