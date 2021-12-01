@@ -1,0 +1,11 @@
+[Unit]
+Description=NGAS Server
+Wants=network.target
+After=network.target
+
+[Service]
+ExecStart=/home/mlflow/run_ngas.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
