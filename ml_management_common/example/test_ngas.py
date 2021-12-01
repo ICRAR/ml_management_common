@@ -33,7 +33,7 @@ def main():
                 project_name="test_ngas",
                 tracking_server="http://130.95.218.14:5000",
                 output_uri="/mnt/mlflow_artifact_nfs/artifacts",
-                ngas_client=NGASConfiguration(host="130.95.218.14")
+                ngas_client=NGASConfiguration(host="130.95.218.14", cache_dir="/home/sam/ngas_test_cache")
             ),
             {}
     ) as experiment:
@@ -49,7 +49,7 @@ def main2():
                 project_name="test_ngas",
                 tracking_server="http://130.95.218.14:5000",
                 output_uri="/mnt/mlflow_artifact_nfs/artifacts",
-                ngas_client=NGASConfiguration(host="130.95.218.14")
+                ngas_client=NGASConfiguration(host="130.95.218.14", cache_dir="/home/sam/ngas_test_cache")
             ),
             {}
     ) as experiment:

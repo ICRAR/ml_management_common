@@ -85,7 +85,11 @@ class BaseExperiment(ABC):
             bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
 
     class NGASWrapper(object):
-        def __init__(self, parent: "BaseExperiment", ngas_client: Union[NGASClient, NGASConfiguration]):
+        def __init__(
+            self,
+            parent: "BaseExperiment",
+            ngas_client: Union[NGASClient, NGASConfiguration]
+        ):
             self.parent = parent
             if isinstance(ngas_client, NGASClient):
                 self.ngas_client = ngas_client
@@ -202,10 +206,18 @@ class BaseExperiment(ABC):
                     p = os.path.join(artifact_path, f) if artifact_path is not None else None
                     self._log_artifact(os.path.join(local_directory_path, f), p)
 
-    def __init__(self, upload_threads=2, ngas_client: Union[NGASClient, NGASConfiguration, None] = None):
+    def __init__(
+        self,
+        upload_threads=2,
+        ngas_client: Union[NGASClient, NGASConfiguration, None] = None
+    ):
         """
         :param upload_threads: If non zero, uploads will be queued and performed in separate threads.
         Threads are used because the upload is IO bound and is sped up significantly despite GIL.
+        :param ngas_client: If provided, this client will be used to upload artifacts to NGAS. If not provided here,
+            it can be provided to the ngas() method when creating an ngas interface.
+        :param ngas_local_cache_dir: If provided, this directory will be used to cache files from NGAS locally.
+            If the file exists in the cache, it will be used instead of downloading the file from NGAS.
         """
         self._upload_threads = upload_threads
         self._upload_thread_pool: ThreadPoolExecutor

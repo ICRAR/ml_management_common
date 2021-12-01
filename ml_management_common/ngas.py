@@ -21,7 +21,10 @@
 #
 import io
 import os
+from contextlib import contextmanager
+
 import requests
+import glob
 
 from io import StringIO
 from datetime import datetime
@@ -37,10 +40,19 @@ T = TypeVar('T')
 
 
 class NGASConfiguration(object):
-    def __init__(self, host="localhost", port=7777, protocol="http"):
+    def __init__(
+        self,
+        host="localhost",
+        port=7777,
+        protocol="http",
+        cache_dir: Optional[str] = None,
+        force_cache=False
+    ):
         self.host = host
         self.port = port
         self.protocol = protocol
+        self.cache_dir = cache_dir
+        self.force_cache = force_cache
 
 
 class NGASResponse(object):
@@ -70,20 +82,51 @@ class NGASStatusResponse(NGASResponse):
         return f"NGASStatusResponse(url='{self.http_url}', status='{self.http_status}', date={self.date}, version={self.version}, host_id='{self.host_id}', message='{self.message}', status='{self.status}', state='{self.state}', sub_state='{self.sub_state}')"
 
 
+class IterStream(io.RawIOBase):
+    def __init__(self, iterator: Iterator):
+        self.leftover = None
+        self.iterator = iterator
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        try:
+            length = len(b)  # We're supposed to return at most this much
+            chunk = self.leftover or next(self.iterator)
+            output, self.leftover = chunk[:length], chunk[length:]
+            b[:len(output)] = output
+            return len(output)
+        except StopIteration:
+            return 0    # indicate EOF
+
+
 class NGASFileResponse(NGASResponse):
-    def __init__(self, url: str, status: int, filename: str, data_iter: Iterator):
+    def __init__(self, url: str, status: int, filename: str, data_iter: Optional[Iterator] = None, local_path: Optional[str] = None):
         super().__init__(url, status)
         self.filename = filename
         self.data_iter = data_iter
+        self.local_path = local_path
 
     def __repr__(self):
         return f"NGASFileResponse(url='{self.http_url}', status='{self.http_status}', filename='{self.filename}')"
 
+    @property
+    def is_cached(self):
+        return self.local_path is not None
+
+    @contextmanager
+    def stream(self):
+        if self.is_cached:
+            with open(self.local_path, 'rb') as f:
+                yield f
+        else:
+            yield IterStream(self.data_iter)
+
     def write(self, filename: Optional[str] = None):
         final_filename = self.filename if filename is None else filename
-        with open(final_filename, "wb") as f:
-            for chunk in self.data_iter:
-                f.write(chunk)
+        with open(final_filename, "wb") as f, self.stream() as s:
+            f.write(s.read())
         return final_filename
 
 
@@ -202,7 +245,6 @@ class NGASClient(object):
         **kwargs
     ):
         """
-
         :param file: File, or path to file to archive.
         If the file is a remote file (http, ftp), it will be downloaded by the NGAS server and stored with
         the filename it has.
@@ -217,6 +259,10 @@ class NGASClient(object):
         :param kwargs:
         :return:
         """
+        if self.config.force_cache:
+            # Prevent the upload in force_cache mode, since the user is trying to conserve
+            # internet bandwidth.
+            raise RuntimeError("Cannot use archive with force_cache=True")
 
         params = {
             "async": '1' if asyncronous else '0',
@@ -400,6 +446,11 @@ class NGASClient(object):
         raise TypeError("Either file_id or file_id_list must be specified")
 
     def cretrieve(self, container_name: Optional[str], container_id: Optional[str] = None):
+        if self.config.force_cache:
+            # Prevent the upload in force_cache mode, since the user is trying to conserve
+            # internet bandwidth.
+            raise RuntimeError("Cannot use cretrieve with force_cache=True")
+
         if not container_name and not container_id:
             raise ValueError("Must specify container_id or container_name")
 
@@ -430,7 +481,62 @@ class NGASClient(object):
             params["processing"] = processing
         if processing_pars is not None:
             params["processing_pars"] = processing_pars
-        return self._ngas_request_file(NGASCommand.RETRIEVE, params)
+
+        if self.config.cache_dir is not None:
+            # Check the cache first for this file.
+            # Check exact
+            cache_path = self._cache_path(file_id, file_version)
+            if cache_path is not None:
+                # We have a cached version of it
+                return NGASFileResponse(cache_path, 200, file_id, local_path=cache_path)
+
+        if self.config.force_cache:
+            # Prevent the upload in force_cache mode, since the user is trying to conserve
+            # internet bandwidth.
+            raise RuntimeError("No cached version, and cannot use retrieve with force_cache=True")
+
+        response = self._ngas_request_file(NGASCommand.RETRIEVE, params)
+        if response.http_ok and self.config.cache_dir:
+            # Cache the file
+            name = file_id
+            if file_version is not None:
+                name += f"_{file_version}"
+            cache_path = os.path.join(self.config.cache_dir, name)
+            response.write(cache_path)
+            return NGASFileResponse(cache_path, 200, file_id, local_path=cache_path)
+
+        return response
+
+    def _cache_path(self, file_id: str, file_version: Optional[int] = None):
+        name = file_id
+        if file_version is not None:
+            name += f"_{file_version}"
+        path = os.path.join(self.config.cache_dir, name)
+        if os.path.exists(path):
+            # Exact path exists for this file.
+            return path
+
+        if file_version is None:
+            # see if there's a versioned path
+            paths: list[str] = glob.glob(f"{path}*")
+            if len(paths) > 0:
+                # the remaining bit of the path should be _{number} only.
+                def get_version(path: str):
+                    index = path.rfind('_')
+                    if index < 0:
+                        return -1
+                    try:
+                        return int(path[index+1:])
+                    except:
+                        return -1
+                real_paths = [(path, get_version(path)) for path in paths if get_version(path) >= 0]
+                real_paths.sort(key=lambda x: x[1], reverse=True)
+                if len(real_paths) > 0:
+                    # return the highest versioned path
+                    return real_paths[0][0]
+
+        # Could not find something with the specified file version :(
+        return None
 
     def subscribe(
         self,
