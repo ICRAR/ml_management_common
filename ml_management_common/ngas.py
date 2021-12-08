@@ -26,17 +26,94 @@ from contextlib import contextmanager
 import requests
 import glob
 
+from abc import ABC, abstractmethod
 from io import StringIO
 from datetime import datetime
 from enum import Enum
 from urllib.parse import urlparse, urlunparse
 from defusedxml.ElementTree import parse as xmlparse
 from xml.etree.ElementTree import ElementTree, Element, tostring
-from typing import TypeVar, Type, Iterator, Optional, Union
+from typing import TypeVar, Iterator, Optional, Union, Callable
 
 from requests import Response
+from requests.structures import CaseInsensitiveDict
 
 T = TypeVar('T')
+
+
+class NGASLoggingAdapter(ABC):
+    """
+    Logging interface that the NGAS client will use to log messages.
+    """
+    @abstractmethod
+    def debug(self, msg: str):
+        pass
+
+    @abstractmethod
+    def info(self, msg: str):
+        pass
+
+    @abstractmethod
+    def warn(self, msg: str):
+        pass
+
+    @abstractmethod
+    def error(self, msg: str):
+        pass
+
+
+class NullNGASLoggingAdapter(NGASLoggingAdapter):
+    """
+    Null logging adapter that does nothing
+    """
+    def debug(self, msg: str):
+        pass
+
+    def info(self, msg: str):
+        pass
+
+    def warn(self, msg: str):
+        pass
+
+    def error(self, msg: str):
+        pass
+
+
+class PrintNGASLoggingAdapter(NGASLoggingAdapter):
+    """
+    Default logging adapter that logs via print()
+    """
+    def debug(self, msg: str):
+        print(f"{datetime.now()} DEBUG: {msg}")
+
+    def info(self, msg: str):
+        print(f"{datetime.now()} INFO: {msg}")
+
+    def warn(self, msg: str):
+        print(f"{datetime.now()} WARN: {msg}")
+
+    def error(self, msg: str):
+        print(f"{datetime.now()} ERROR: {msg}")
+
+
+class PythonNGASLoggingAdapter(NGASLoggingAdapter):
+    """
+    Logging adapter to work with the 'logging' or 'loguru' logging libraries
+    """
+    def __init__(self, logger):
+        self.logger = logger
+
+    def debug(self, msg: str):
+        self.logger.debug(msg)
+
+    def info(self, msg: str):
+        self.logger.info(msg)
+
+    def warn(self, msg: str):
+        self.logger.warning(msg)
+
+    def error(self, msg: str):
+        self.logger.error(msg)
 
 
 class NGASConfiguration(object):
@@ -46,19 +123,27 @@ class NGASConfiguration(object):
         port=7777,
         protocol="http",
         cache_dir: Optional[str] = None,
-        force_cache=False
+        force_cache=False,
+        logging: Union[NGASLoggingAdapter, bool, None] = None
     ):
         self.host = host
         self.port = port
         self.protocol = protocol
         self.cache_dir = cache_dir
         self.force_cache = force_cache
+        if logging is None or logging is False:
+            self.logging = NullNGASLoggingAdapter()
+        elif logging is True:
+            self.logging = PrintNGASLoggingAdapter()
+        else:
+            self.logging = logging
 
 
 class NGASResponse(object):
-    def __init__(self, url: str, status: int):
+    def __init__(self, url: str, status: int, headers: CaseInsensitiveDict[str]):
         self.http_url = url
         self.http_status = status
+        self.headers = headers
 
     @property
     def http_ok(self):
@@ -66,8 +151,8 @@ class NGASResponse(object):
 
 
 class NGASStatusResponse(NGASResponse):
-    def __init__(self, url: str, status: int, body: ElementTree):
-        super().__init__(url, status)
+    def __init__(self, url: str, status: int, headers: CaseInsensitiveDict[str], body: ElementTree):
+        super().__init__(url, status, headers)
 
         root = body.getroot().find("Status")
         self.date = datetime.fromisoformat(root.attrib["Date"])
@@ -102,8 +187,8 @@ class IterStream(io.RawIOBase):
 
 
 class NGASFileResponse(NGASResponse):
-    def __init__(self, url: str, status: int, filename: str, data_iter: Optional[Iterator] = None, local_path: Optional[str] = None):
-        super().__init__(url, status)
+    def __init__(self, url: str, status: int, headers: CaseInsensitiveDict[str], filename: str, data_iter: Optional[Iterator] = None, local_path: Optional[str] = None):
+        super().__init__(url, status, headers)
         self.filename = filename
         self.data_iter = data_iter
         self.local_path = local_path
@@ -132,7 +217,7 @@ class NGASFileResponse(NGASResponse):
 
 class NGASException(Exception):
     def __init__(self, message: str, response: Response, status: Optional[NGASStatusResponse] = None):
-        super().__init__(message)
+        super().__init__(f"{message}: {status.message}" if status is not None else message)
         self.response = response
         self.status = status
 
@@ -159,6 +244,23 @@ class NGASCommand(str, Enum):
     CLONE = "CLONE"
     ARCHIVE = "ARCHIVE"
     QARCHIVE = "QARCHIVE"
+    REARCHIVE = "REARCHIVE"
+    CARCHIVE = "CARCHIVE"
+
+
+def logcommand(command: NGASCommand):
+    def _logcommand(func: Callable[[...], T]):
+        def wrap(*args, **kwargs) -> T:
+            args[0].logging.info(f"Executing {command} command")
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                args[0].logging.error(f"Error executing {command} command: {e}")
+                raise e
+            finally:
+                args[0].logging.info(f"Finished {command} command")
+        return wrap
+    return _logcommand
 
 
 def parse_http_kv_list(header: str) -> dict[str, str]:
@@ -192,47 +294,85 @@ class NGASClient(object):
     def __init__(self, config: NGASConfiguration, timeout=10):
         self.config = config
         self.timeout = timeout
+        self.logging = config.logging
 
+    @logcommand(NGASCommand.EXIT)
     def exit(self):
         return self._ngas_request_xml(NGASCommand.EXIT)
 
+    @logcommand(NGASCommand.INIT)
     def init(self):
         return self._ngas_request_xml(NGASCommand.INIT)
 
+    @logcommand(NGASCommand.LABEL)
     def label(self, slot_id: str, host_id: str):
         return self._ngas_request_xml(NGASCommand.LABEL, {
             "slot_id": slot_id,
             "host_id": host_id
         })
 
+    @logcommand(NGASCommand.OFFLINE)
     def offline(self):
         return self._ngas_request_xml(NGASCommand.OFFLINE)
 
+    @logcommand(NGASCommand.ONLINE)
     def online(self):
         return self._ngas_request_xml(NGASCommand.ONLINE)
 
+    @logcommand(NGASCommand.REMDISK)
     def remdisk(self, disk_id: str, execute=False):
         return self._ngas_request_xml(NGASCommand.REMDISK, {
             "disk_id": disk_id,
             "execute": "1" if execute else "0"
         })
 
-    def remfile(self, disk_id: str, file_id: str, file_version: Optional[int] = None, execute=False):
-        params = {
-            "disk_id": disk_id,
-            "file_id": file_id,
-            "execute": "1" if execute else "0"
-        }
+    @logcommand(NGASCommand.REMFILE)
+    def remfile(
+        self,
+        disk_id: Optional[str] = None,
+        file_id: Optional[str] = None,
+        file_version: Optional[int] = None,
+        execute=False
+    ):
+        params = {"execute": "1" if execute else "0"}
+        if disk_id is not None:
+            params["disk_id"] = disk_id
+        if file_id is not None:
+            params["file_id"] = file_id
         if file_version is not None:
             params["file_version"] = str(file_version)
         return self._ngas_request_xml(NGASCommand.REMFILE, params)
 
+    @logcommand(NGASCommand.REGISTER)
     def register(self, path: str, asyncronous=False):
         return self._ngas_request_xml(NGASCommand.REGISTER, {
             "path": path,
             "async": '1' if asyncronous else '0'
         })
 
+    @logcommand(NGASCommand.QARCHIVE)
+    def qarchive(
+        self,
+        file: Union[str, os.PathLike, io.IOBase],
+        filename: Optional[str] = None,
+        mime_type="application/octet-stream",
+        asyncronous=False,
+        versioning=True,
+        file_version: Optional[int] = None,
+        **kwargs
+    ):
+        return self._archive(
+            NGASCommand.QARCHIVE,
+            file,
+            filename,
+            mime_type,
+            asyncronous,
+            versioning,
+            file_version,
+            **kwargs
+        )
+
+    @logcommand(NGASCommand.ARCHIVE)
     def archive(
         self,
         file: Union[str, os.PathLike, io.IOBase],
@@ -241,69 +381,24 @@ class NGASClient(object):
         asyncronous=False,
         versioning=True,
         file_version: Optional[int] = None,
-        q_archive=False,
         **kwargs
     ):
-        """
-        :param file: File, or path to file to archive.
-        If the file is a remote file (http, ftp), it will be downloaded by the NGAS server and stored with
-        the filename it has.
-        Local files will be stored with their local file names, or the override filename if given
-        :param filename: Override filename to use when storing a local file. If provided, this name will
-        be used on the NGAS server instead of the file's name.
-        :param mime_type:
-        :param asyncronous:
-        :param versioning:
-        :param file_version:
-        :param q_archive:
-        :param kwargs:
-        :return:
-        """
-        if self.config.force_cache:
-            # Prevent the upload in force_cache mode, since the user is trying to conserve
-            # internet bandwidth.
-            raise RuntimeError("Cannot use archive with force_cache=True")
+        return self._archive(
+            NGASCommand.ARCHIVE,
+            file,
+            filename,
+            mime_type,
+            asyncronous,
+            versioning,
+            file_version,
+            **kwargs
+        )
 
-        params = {
-            "async": '1' if asyncronous else '0',
-            "versioning": '1' if versioning else '0',
-        }
-        if file_version is not None:
-            params["file_version"] = str(file_version)
-        command = NGASCommand.QARCHIVE if q_archive else NGASCommand.ARCHIVE
-
-        if isinstance(file, str):
-            if is_known_pull_url(file):
-                params["filename"] = file
-                if mime_type is not None:
-                    params["mime_type"] = mime_type
-                return self._ngas_request_xml(command, params), os.path.basename(file)
-
-        close_file = False
-        if not isinstance(file, io.IOBase):
-            # We're opening this file internally and will need to close it
-            file = open(file, 'rb')
-            close_file = True
-
-        # File is now guaranteed to be an open IOBase
-        try:
-            fname = filename if filename is not None else os.path.basename(file.name)
-            params["filename"] = fname
-            return self._ngas_request_xml(
-                command,
-                params,
-                method="POST",
-                data=file,
-                headers={'Content-Type': mime_type or "ngas/archive-request"},
-                **kwargs
-            ), fname
-        finally:
-            if close_file:
-                file.close()
-
+    @logcommand(NGASCommand.REARCHIVE)
     def rearchive(self, file_uri: str, file_info_xml: Element, **kwargs):
         raise NotImplementedError("Not implemented for now")
 
+    @logcommand(NGASCommand.CLONE)
     def clone(
         self,
         file_id: Optional[str] = None,
@@ -323,9 +418,11 @@ class NGASClient(object):
             params["target_disk_id"] = target_disk_id
         return self._ngas_request_xml(NGASCommand.CLONE, params)
 
+    @logcommand(NGASCommand.CARCHIVE)
     def carchive(self, directory: str, files_mtype: str, qarchive=False):
         raise NotImplementedError("Not implemented for now as multipart container uploads are a bit complex")
 
+    @logcommand(NGASCommand.CAPPEND)
     def cappend(
         self,
         file_id: Optional[str] = None,
@@ -362,6 +459,7 @@ class NGASClient(object):
             body=file_list_to_xml_string(file_id_list)
         )
 
+    @logcommand(NGASCommand.CCREATE)
     def ccreate(
         self,
         container_name: Optional[str] = None,
@@ -384,6 +482,7 @@ class NGASClient(object):
             data=tostring(container_hierarchy, encoding="utf-8")
         )
 
+    @logcommand(NGASCommand.CDESTROY)
     def cdestroy(self, container_name: Optional[str] = None, container_id: Optional[str] = None, recursive=False):
         if not (bool(container_name) ^ bool(container_id)):
             raise ValueError("Either container_name or container_id must be specified")
@@ -398,6 +497,7 @@ class NGASClient(object):
 
         return self._ngas_request_xml(NGASCommand.CDESTROY, params)
 
+    @logcommand(NGASCommand.CLIST)
     def clist(self, container_name: Optional[str] = None, container_id: Optional[str] = None):
         if not (bool(container_name) ^ bool(container_id)):
             raise ValueError("Either container_name or container_id must be specified")
@@ -410,6 +510,7 @@ class NGASClient(object):
 
         return self._ngas_request_xml(NGASCommand.CLIST, params)
 
+    @logcommand(NGASCommand.CREMOVE)
     def cremove(
         self,
         file_id: Optional[str] = None,
@@ -445,6 +546,7 @@ class NGASClient(object):
         # Should not be able to get here
         raise TypeError("Either file_id or file_id_list must be specified")
 
+    @logcommand(NGASCommand.CRETRIEVE)
     def cretrieve(self, container_name: Optional[str], container_id: Optional[str] = None):
         if self.config.force_cache:
             # Prevent the upload in force_cache mode, since the user is trying to conserve
@@ -465,6 +567,7 @@ class NGASClient(object):
 
         return self._ngas_request_file(NGASCommand.CRETRIEVE, params)
 
+    @logcommand(NGASCommand.RETRIEVE)
     def retrieve(
         self,
         file_id: str,
@@ -485,15 +588,15 @@ class NGASClient(object):
         if self.config.cache_dir is not None:
             # Check the cache first for this file.
             # Check exact
-            cache_path = self._cache_path(file_id, file_version)
+            cache_path = self._find_cache_path(file_id, file_version)
             if cache_path is not None:
                 # We have a cached version of it
-                return NGASFileResponse(cache_path, 200, file_id, local_path=cache_path)
+                return NGASFileResponse(cache_path, 200, CaseInsensitiveDict(), file_id, local_path=cache_path)
 
         if self.config.force_cache:
             # Prevent the upload in force_cache mode, since the user is trying to conserve
             # internet bandwidth.
-            raise RuntimeError("No cached version, and cannot use retrieve with force_cache=True")
+            raise RuntimeError("No cached version, will not download because force_cache=True")
 
         response = self._ngas_request_file(NGASCommand.RETRIEVE, params)
         if response.http_ok and self.config.cache_dir:
@@ -503,41 +606,11 @@ class NGASClient(object):
                 name += f"_{file_version}"
             cache_path = os.path.join(self.config.cache_dir, name)
             response.write(cache_path)
-            return NGASFileResponse(cache_path, 200, file_id, local_path=cache_path)
+            return NGASFileResponse(cache_path, 200, response.headers, file_id, local_path=cache_path)
 
         return response
 
-    def _cache_path(self, file_id: str, file_version: Optional[int] = None):
-        name = file_id
-        if file_version is not None:
-            name += f"_{file_version}"
-        path = os.path.join(self.config.cache_dir, name)
-        if os.path.exists(path):
-            # Exact path exists for this file.
-            return path
-
-        if file_version is None:
-            # see if there's a versioned path
-            paths: list[str] = glob.glob(f"{path}*")
-            if len(paths) > 0:
-                # the remaining bit of the path should be _{number} only.
-                def get_version(path: str):
-                    index = path.rfind('_')
-                    if index < 0:
-                        return -1
-                    try:
-                        return int(path[index+1:])
-                    except:
-                        return -1
-                real_paths = [(path, get_version(path)) for path in paths if get_version(path) >= 0]
-                real_paths.sort(key=lambda x: x[1], reverse=True)
-                if len(real_paths) > 0:
-                    # return the highest versioned path
-                    return real_paths[0][0]
-
-        # Could not find something with the specified file version :(
-        return None
-
+    @logcommand(NGASCommand.SUBSCRIBE)
     def subscribe(
         self,
         url: str,
@@ -557,11 +630,13 @@ class NGASClient(object):
             params["filter_plugin_pars"] = filter_plugin_pars
         return self._ngas_request_xml(NGASCommand.SUBSCRIBE, params)
 
+    @logcommand(NGASCommand.UNSUBSCRIBE)
     def unsubscribe(self, url: str):
         return self._ngas_request_xml(NGASCommand.UNSUBSCRIBE, {
             "url": url
         })
 
+    @logcommand(NGASCommand.STATUS)
     def status(self) -> NGASStatusResponse:
         """
         Get the status of the NGAS server
@@ -580,8 +655,17 @@ class NGASClient(object):
     ):
         response, url_str = self._ngas_request(command, params, headers, method, stream=True, **kwargs)
         disposition = parse_http_kv_list(response.headers.get("Content-Disposition", ""))
+        self.logging.debug(f"Content-Disposition: {disposition}")
         iterator = response.iter_content(chunk_size=response_file_chunk_size)
-        return NGASFileResponse(url_str, response.status_code, disposition.get("filename", ""), iterator)
+        file_response = NGASFileResponse(
+            url_str,
+            response.status_code,
+            response.headers,
+            disposition.get("filename", ""),
+            iterator
+        )
+        self.logging.debug(f"{file_response}")
+        return file_response
 
     def _ngas_request_xml(
         self,
@@ -592,7 +676,9 @@ class NGASClient(object):
         **kwargs
     ):
         response, url_str = self._ngas_request(command, params, headers, method, **kwargs)
-        return NGASStatusResponse(url_str, response.status_code, xmlparse(StringIO(response.text)))
+        status = NGASStatusResponse(url_str, response.status_code, response.headers, xmlparse(StringIO(response.text)))
+        self.logging.debug(f"{status}")
+        return status
 
     def _ngas_request(
         self,
@@ -609,6 +695,7 @@ class NGASClient(object):
             url = url._replace(query='&'.join(parts))
 
         url_str: str = urlunparse(url)
+        self.logging.debug(f"Making {method} request: {url_str}, with headers: {str(headers)}")
         response = requests.request(
             method,
             url_str,
@@ -620,25 +707,134 @@ class NGASClient(object):
 
         if not response.ok:
             try:
-                status = NGASStatusResponse(url_str, response.status_code, xmlparse(StringIO(response.text)))
+                status = NGASStatusResponse(
+                    url_str,
+                    response.status_code,
+                    response.headers,
+                    xmlparse(StringIO(response.text))
+                )
             except Exception as e:
                 status = None
+            # Let the user handle the error case, if they want to log it
             raise NGASException(f"NGAS request failed", response, status)
 
+        self.logging.debug(f"Request success: {url_str}")
         return response, url_str
 
+    def _cache_file_path(self, file_id: str, file_version: Optional[int] = None) -> str:
+        name = file_id
+        if file_version is not None:
+            name += f"_{file_version}"
+        return os.path.join(self.config.cache_dir, name)
 
-def main():
-    client = NGASClient(NGASConfiguration(host="130.95.218.14"))
-    try:
-        print(client.status())
-        #print(client.archive("/home/sam/get-pip.py", mime_type="application/octet-stream"))
-        stream = client.retrieve("get-pip.py")
-        print(stream)
-        stream.write("/home/sam/get-pip-response.py")
-    except NGASException as e:
-        print(e.status)
+    def _find_cache_path(self, file_id: str, file_version: Optional[int] = None):
+        path = self._cache_file_path(file_id, file_version)
+        if os.path.exists(path):
+            # Exact path exists for this file.
+            self.logging.info(f"Found cache file: {path}")
+            return path
 
+        if file_version is None:
+            # see if there's a versioned path
+            paths: list[str] = glob.glob(f"{path}*")
+            if len(paths) > 0:
+                # the remaining bit of the path should be _{number} only.
+                def get_version(path: str):
+                    index = path.rfind('_')
+                    if index < 0:
+                        return -1
+                    try:
+                        return int(path[index+1:])
+                    except:
+                        return -1
+                real_paths = [(path, get_version(path)) for path in paths if get_version(path) >= 0]
+                real_paths.sort(key=lambda x: x[1], reverse=True)
+                if len(real_paths) > 0:
+                    # return the highest versioned path
+                    self.logging.info(f"Found cache file: {real_paths[0][0]}")
+                    return real_paths[0][0]
 
-if __name__ == '__main__':
-    main()
+        # Could not find something with the specified file version :(
+        self.logging.info(f"Could not find cached file {path}")
+        return None
+
+    def _archive(
+        self,
+        command: NGASCommand,
+        file: Union[str, os.PathLike, io.IOBase],
+        filename: Optional[str] = None,
+        mime_type="application/octet-stream",
+        asyncronous=False,
+        versioning=True,
+        file_version: Optional[int] = None,
+        **kwargs
+    ):
+        """
+        :param file: File, or path to file to archive.
+        If the file is a remote file (http, ftp), it will be downloaded by the NGAS server and stored with
+        the filename it has.
+        Local files will be stored with their local file names, or the override filename if given
+        :param filename: Override filename to use when storing a local file. If provided, this name will
+        be used on the NGAS server instead of the file's name.
+        :param mime_type:
+        :param asyncronous:
+        :param versioning:
+        :param file_version:
+        :param q_archive:
+        :param kwargs:
+        :return:
+        """
+        if self.config.force_cache:
+            # Prevent the upload in force_cache mode, since the user is trying to conserve
+            # internet bandwidth.
+            raise RuntimeError("Cannot use archive with force_cache=True")
+
+        params = {
+            "async": '1' if asyncronous else '0',
+            "versioning": '1' if versioning else '0',
+        }
+        if file_version is not None:
+            params["file_version"] = str(file_version)
+
+        if isinstance(file, str):
+            if is_known_pull_url(file):
+                self.logging.debug(f"Using pull url {file}")
+                params["filename"] = file
+                if mime_type is not None:
+                    params["mime_type"] = mime_type
+                return self._ngas_request_xml(command, params), os.path.basename(file)
+
+        close_file = False
+        if isinstance(file, io.IOBase):
+            self.logging.debug(f"Provided with open file handle {file}")
+        else:
+            self.logging.debug(f"Opening local file {file}")
+            # We're opening this file internally and will need to close it
+            file = open(file, 'rb')
+            close_file = True
+
+        # File is now guaranteed to be an open IOBase
+        try:
+            fname = filename if filename is not None else os.path.basename(file.name)
+            params["filename"] = fname
+            response = self._ngas_request_xml(
+                command,
+                params,
+                method="POST",
+                data=file,
+                headers={'Content-Type': mime_type or "ngas/archive-request"},
+                **kwargs
+            )
+            if self.config.cache_dir is not None:
+                # succeeded, so now we want to write the file out to the cache directory
+                cache_path = self._cache_file_path(fname, file_version if versioning and file_version is not None else None)
+                self.logging.info(f"Caching archived file locally: {cache_path}")
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                with open(cache_path, 'wb') as f:
+                    file.seek(0)
+                    f.write(file.read())
+            return response, fname
+        finally:
+            if close_file:
+                self.logging.debug(f"Closing local file {file.name}")
+                file.close()

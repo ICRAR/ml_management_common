@@ -21,7 +21,7 @@
 #
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ThreadPoolExecutor, Future, wait as wait_for_futures
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator, Callable, TypeVar
@@ -103,21 +103,9 @@ class BaseExperiment(ABC):
             :param local_path: Local path to save the downloaded file to.
             :return:
             """
-            # We expect the downloaded file from the machine learning server to be a JSON file created by
-            # _log_artifact.
-            with self.parent.download_temp_file(artifact_uri) as f:
-                try:
-                    with open(f, 'r') as json_file:
-                        loaded_json = json.load(json_file)
-                    if not isinstance(loaded_json, dict):
-                        raise ValueError(f"The downloaded file {artifact_uri} was not a JSON object.")
-                    # download this path from NGAS to the provided local path
-                    self.ngas_client.retrieve(loaded_json["ngas_path"]).write(local_path)
-
-                except json.JSONDecodeError:
-                    raise ValueError(f"The downloaded file {artifact_uri} was not valid JSON.")
-                except KeyError:
-                    raise ValueError(f"The downloaded file {artifact_uri} did not contain a 'ngas_path' key.")
+            ngas_path = self._get_artfiact_ngas_path(artifact_uri)
+            # download this path from NGAS to the provided local path
+            self.ngas_client.retrieve(ngas_path).write(local_path)
 
         def download_named_file(self, ngas_name: str, local_path: str, file_version: Optional[int] = None):
             """
@@ -131,6 +119,22 @@ class BaseExperiment(ABC):
             :param file_version: Optional version of the file to download.
             """
             self.ngas_client.retrieve(ngas_name, file_version).write(local_path)
+
+        def delete_named_file(self, ngas_name: str, file_version: Optional[int] = None):
+            """
+            Delete a file directly from NGAS by name
+            :param ngas_name: The name of the file to delete.
+            :param file_version: Optional version of the file to delete.
+            """
+            self.ngas_client.remfile(file_id=ngas_name, file_version=file_version)
+
+        def delete_artifact_file(self, artifact_uri: str):
+            """
+            Deletes an artifact from NGAS, using the artfiact URI that it was logged to with log_artfiact.
+            :param artifact_uri: The artfiact URI to delete.
+            """
+            ngas_path = self._get_artfiact_ngas_path(artifact_uri)
+            self.delete_named_file(ngas_path)
 
         def log_artifact(
             self,
@@ -174,7 +178,7 @@ class BaseExperiment(ABC):
                 ngas_path = os.path.join(self.parent.unique_run_id(), local_path_base)
             result, filename = self.ngas_client.archive(
                 local_path,
-                ngas_path,
+                ngas_path.replace('/', '_'),
                 file_version=ngas_version
             )
             ngas_storage_info = vars(result)
@@ -200,6 +204,22 @@ class BaseExperiment(ABC):
             """
             return self.parent._thread_execute(self._log_artifacts, local_directory_path, artifact_path)
 
+        def _get_artfiact_ngas_path(self, artifact_uri: str):
+            # We expect the downloaded file from the machine learning server to be a JSON file created by
+            # _log_artifact.
+            with self.parent.download_temp_file(artifact_uri) as f:
+                try:
+                    with open(f, 'r') as json_file:
+                        loaded_json = json.load(json_file)
+                        if not isinstance(loaded_json, dict):
+                            raise ValueError(f"The downloaded file {artifact_uri} was not a JSON object.")
+                        return loaded_json["ngas_path"]
+
+                except json.JSONDecodeError:
+                    raise ValueError(f"The downloaded file {artifact_uri} was not valid JSON.")
+                except KeyError:
+                    raise ValueError(f"The downloaded file {artifact_uri} did not contain a 'ngas_path' key.")
+
         def _log_artifacts(self, local_directory_path: str, artifact_path: Optional[str] = None):
             for f in os.listdir(local_directory_path):
                 if os.path.isfile(f):
@@ -221,6 +241,7 @@ class BaseExperiment(ABC):
         """
         self._upload_threads = upload_threads
         self._upload_thread_pool: ThreadPoolExecutor
+        self._futures_in_progress: set[Future] = set()
         self._ngas_client = ngas_client
 
     def __enter__(self):
@@ -250,11 +271,27 @@ class BaseExperiment(ABC):
         """
         pass
 
+    def wait_upload_jobs(self, timeout: Union[float, int, None] = None):
+        """
+        Waits for all upload jobs to complete
+        :param timeout: Optional timeout to wait for, in seconds
+        """
+        wait_for_futures(self._futures_in_progress, timeout=timeout)
+
     def _thread_execute(self, function: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Union[Future[T], T]:
         if self._upload_thread_pool:
-            return self._upload_thread_pool.submit(function, *args, **kwargs)
+            future = self._upload_thread_pool.submit(function, *args, **kwargs)
+            future.add_done_callback(self._thread_done)
+            self._futures_in_progress.add(future)
+            return future
         else:
             return function(*args, **kwargs)
+
+    def _thread_done(self, future: Future[T]):
+        self._futures_in_progress.remove(future)
+        e = future.exception()
+        if e:
+            print(f"Exception in worker thread: {e}")
 
     @abstractmethod
     def log_text(self, text: str, artifact_path: str):
