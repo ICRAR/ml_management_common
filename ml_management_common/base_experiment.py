@@ -243,8 +243,8 @@ class BaseExperiment(ABC):
     def _thread_execute(self, function: Callable[..., T], *args, **kwargs) -> Union[Future[T], T]:
         if self._upload_thread_pool:
             future = self._upload_thread_pool.submit(function, *args, **kwargs)
-            future.add_done_callback(self._thread_done)
             self._futures_in_progress.add(future)
+            future.add_done_callback(self._thread_done)
             return future
         else:
             return function(*args, **kwargs)
