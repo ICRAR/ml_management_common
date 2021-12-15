@@ -133,12 +133,12 @@ class NGASConfiguration(object):
         :return: Configuration created from dict.
         """
         return NGASConfiguration(
-            d.get('host'),
-            d.get('port'),
-            d.get('protocol'),
-            d.get('cache_dir'),
-            d.get('force_cache'),
-            d.get('logging')
+            d.get('host', "localhost"),
+            d.get('port', 7777),
+            d.get('protocol', "http"),
+            d.get('cache_dir', None),
+            d.get('force_cache', False),
+            d.get('logging', None)
         )
 
     def __init__(

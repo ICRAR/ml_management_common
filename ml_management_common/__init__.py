@@ -85,7 +85,7 @@ def create_experiment(name: str, type: TaskTypes, configuration_path: Optional[s
                 yaml = YAML().load(yaml_file)
                 ngas_configuration_yaml = yaml.get("ngas_client", None)
                 if ngas_configuration_yaml is not None:
-                    ngas_configuration = NGASConfiguration.from_dict(vars(ngas_configuration_yaml))
+                    ngas_configuration = NGASConfiguration.from_dict(ngas_configuration_yaml)
                 else:
                     ngas_configuration = None
                 configuration = MLProjectConfiguration(
