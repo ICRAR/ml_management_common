@@ -1,4 +1,0 @@
-mlflow
-pytorch_lightning
-tabulate
-graphviz

@@ -26,12 +26,7 @@ from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator, Callable, TypeVar
 
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib import animation
 import tempfile
-
-import bokeh.io as bokeh_io
 
 from .model_summary import model_summary
 from .ngas import NGASClient, NGASConfiguration
@@ -47,80 +42,6 @@ T = TypeVar('T')
 
 
 class BaseExperiment(ABC):
-
-    class WrappedPDFPages(PdfPages):
-        """
-        Wrapper to provide a context manager for PdfPages.
-
-        Use savefig() to save a figure to the PDF.
-        """
-        def __init__(self, parent: "BaseExperiment", filename: str, artifact_name: str):
-            """
-            :param parent: The experiment that is using this object.
-            :param filename: The PDF Filename to write to.
-            :param artifact_name: Artifact name to log the PDF to.
-            """
-            super().__init__(filename)
-            self.artifact_name = artifact_name
-            self.parent = parent
-            self.plot_index = 0
-
-        def savefig(self, figure=None, **kwargs):
-            """
-            Save a figure to the PDF.
-
-            This will also log the figure to the ML Server.
-            :param figure: The figure to save.
-            :param kwargs: Additional arguments to pass to matplotlib.
-            """
-            super().savefig(figure, **kwargs)
-            if figure is None:
-                figure = plt.gcf()
-            title = ""
-            if figure:
-                title = figure._suptitle.get_text()
-            self.parent.log_figure(figure, f"pdf_{self.artifact_name}_{self.plot_index}_{title}")
-            self.plot_index += 1
-
-    class BokehWrapper(object):
-        """
-        Wrapper to provide a context manager for Bokeh.
-        """
-        def __init__(self, doc: "Document", temp_directory: str):
-            """
-            :param doc: The Bokeh Document to wrap.
-            :param temp_directory: Local temporary directory to save Bokeh files to.
-            """
-            self.doc = doc
-            self.temp_directory = temp_directory
-            self.files: list[str] = []
-            self.output_file_name: Optional[str] = None
-
-        def output_file(self, name: str, title="Bokeh Plot", mode=None):
-            """
-            Set the Bokeh output file.
-
-            See `output_file <https://docs.bokeh.org/en/latest/docs/reference/io.html#bokeh.io.output.output_file>`_
-            for more information.
-
-            :param name: The name of the file to save to.
-            :param title: The title of the plot.
-            :param mode: The mode to save the file in.
-            """
-            self.output_file_name = os.path.join(self.temp_directory, name)
-            bokeh_io.output_file(self.output_file_name, title, mode)
-
-        def save(self, obj, filename=None, resources=None, title=None, template=None, state=None, **kwargs):
-            """
-            Save the Bokeh Document to a file.
-
-            See `save <https://docs.bokeh.org/en/latest/docs/reference/io.html#bokeh.io.save>`_
-            for more information.
-            """
-            if filename is not None:
-                filename = os.path.join(self.temp_directory, filename)
-                self.files.append(filename)
-            bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
 
     class NGASWrapper(object):
         """
@@ -475,9 +396,46 @@ class BaseExperiment(ABC):
         :param artifact_path: Optional artifact path. If not provided, the pdf name will be used
         :return: Context that produces a PdfPages object.
         """
+        from matplotlib.backends.backend_pdf import PdfPages
+        import matplotlib.pyplot as plt
+
+        class WrappedPDFPages(PdfPages):
+            """
+            Wrapper to provide a context manager for PdfPages.
+
+            Use savefig() to save a figure to the PDF.
+            """
+            def __init__(self, parent: "BaseExperiment", filename: str, artifact_name: str):
+                """
+                :param parent: The experiment that is using this object.
+                :param filename: The PDF Filename to write to.
+                :param artifact_name: Artifact name to log the PDF to.
+                """
+                super().__init__(filename)
+                self.artifact_name = artifact_name
+                self.parent = parent
+                self.plot_index = 0
+
+            def savefig(self, figure=None, **kwargs):
+                """
+                Save a figure to the PDF.
+
+                This will also log the figure to the ML Server.
+                :param figure: The figure to save.
+                :param kwargs: Additional arguments to pass to matplotlib.
+                """
+                super().savefig(figure, **kwargs)
+                if figure is None:
+                    figure = plt.gcf()
+                title = ""
+                if figure:
+                    title = figure._suptitle.get_text()
+                self.parent.log_figure(figure, f"pdf_{self.artifact_name}_{self.plot_index}_{title}")
+                self.plot_index += 1
+
         with tempfile.TemporaryDirectory() as directory:
             temp_filename = os.path.join(directory, pdf_name)
-            with BaseExperiment.WrappedPDFPages(self, temp_filename, os.path.basename(pdf_name or artifact_path or "")) as pdf:
+            with WrappedPDFPages(self, temp_filename, os.path.basename(pdf_name or artifact_path or "")) as pdf:
                 yield pdf
             self.log_artifact(temp_filename, artifact_path)
 
@@ -507,6 +465,8 @@ class BaseExperiment(ABC):
         :param dpi: DPI of the figure when writing the video.
         :return: Context that produces a matplotlib video writer. The video is automatically saved on context exit.
         """
+        from matplotlib import animation
+
         with tempfile.TemporaryDirectory() as directory:
             temp_filename = os.path.join(directory, video_name)
             writer = animation.FFMpegWriter(
@@ -526,6 +486,48 @@ class BaseExperiment(ABC):
         All plots are saved locally to a temporary directory.
         :return: Context that boken plots can be logged to.
         """
+        import bokeh.io as bokeh_io
+
+        class BokehWrapper(object):
+            """
+            Wrapper to provide a context manager for Bokeh.
+            """
+            def __init__(self, doc: "Document", temp_directory: str):
+                """
+                :param doc: The Bokeh Document to wrap.
+                :param temp_directory: Local temporary directory to save Bokeh files to.
+                """
+                self.doc = doc
+                self.temp_directory = temp_directory
+                self.files: list[str] = []
+                self.output_file_name: Optional[str] = None
+
+            def output_file(self, name: str, title="Bokeh Plot", mode=None):
+                """
+                Set the Bokeh output file.
+
+                See `output_file <https://docs.bokeh.org/en/latest/docs/reference/io.html#bokeh.io.output.output_file>`_
+                for more information.
+
+                :param name: The name of the file to save to.
+                :param title: The title of the plot.
+                :param mode: The mode to save the file in.
+                """
+                self.output_file_name = os.path.join(self.temp_directory, name)
+                bokeh_io.output_file(self.output_file_name, title, mode)
+
+            def save(self, obj, filename=None, resources=None, title=None, template=None, state=None, **kwargs):
+                """
+                Save the Bokeh Document to a file.
+
+                See `save <https://docs.bokeh.org/en/latest/docs/reference/io.html#bokeh.io.save>`_
+                for more information.
+                """
+                if filename is not None:
+                    filename = os.path.join(self.temp_directory, filename)
+                    self.files.append(filename)
+                bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
+
         doc: "Document" = bokeh_io.curdoc()
         old_doc_state = doc.to_json_string()
         old_doc_title = doc.title
@@ -534,7 +536,7 @@ class BaseExperiment(ABC):
 
         try:
             with tempfile.TemporaryDirectory() as directory:
-                wrapper = BaseExperiment.BokehWrapper(doc, directory)
+                wrapper = BokehWrapper(doc, directory)
                 yield wrapper
                 for file in wrapper.files:
                     self.log_artifact(file)
