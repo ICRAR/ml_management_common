@@ -25,7 +25,6 @@ from concurrent.futures import ThreadPoolExecutor, Future, wait as wait_for_futu
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator, Callable, TypeVar
-from typing_extensions import ParamSpec
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -44,7 +43,6 @@ if TYPE_CHECKING:
     from bokeh.document import Document  # pylint: disable=unused-import
     from matplotlib.animation import AbstractMovieWriter  # pylint: disable=unused-import
 
-P = ParamSpec('P')
 T = TypeVar('T')
 
 
@@ -325,7 +323,7 @@ class BaseExperiment(ABC):
         """
         wait_for_futures(self._futures_in_progress, timeout=timeout)
 
-    def _thread_execute(self, function: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> Union[Future[T], T]:
+    def _thread_execute(self, function: Callable[..., T], *args, **kwargs) -> Union[Future[T], T]:
         if self._upload_thread_pool:
             future = self._upload_thread_pool.submit(function, *args, **kwargs)
             future.add_done_callback(self._thread_done)
