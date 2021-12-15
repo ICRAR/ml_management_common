@@ -22,6 +22,7 @@
 
 from .configuration import MLProjectConfiguration
 from .model_summary import model_summary
+from .ngas import NGASConfiguration
 from .task_types import TaskTypes
 from .null_experiment import NullExperiment
 
@@ -82,10 +83,16 @@ def create_experiment(name: str, type: TaskTypes, configuration_path: Optional[s
         try:
             with open(configuration_path, "r") as yaml_file:
                 yaml = YAML().load(yaml_file)
+                ngas_configuration_yaml = yaml.get("ngas_client", None)
+                if ngas_configuration_yaml is not None:
+                    ngas_configuration = NGASConfiguration.from_dict(vars(ngas_configuration_yaml))
+                else:
+                    ngas_configuration = None
                 configuration = MLProjectConfiguration(
                     project_name=yaml.get("project_name", ""),
                     tracking_server=yaml.get("tracking_server", None),
-                    output_uri=yaml.get("output_uri", None)
+                    output_uri=yaml.get("output_uri", None),
+                    ngas_client=ngas_configuration
                 )
                 server_type = yaml.get("server_type", None)
                 if server_type == "mlflow":
