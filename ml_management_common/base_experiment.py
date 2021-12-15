@@ -51,13 +51,30 @@ T = TypeVar('T')
 class BaseExperiment(ABC):
 
     class WrappedPDFPages(PdfPages):
-        def __init__(self, parent, filename: str, artifact_name: str):
+        """
+        Wrapper to provide a context manager for PdfPages.
+
+        Use savefig() to save a figure to the PDF.
+        """
+        def __init__(self, parent: "BaseExperiment", filename: str, artifact_name: str):
+            """
+            :param parent: The experiment that is using this object.
+            :param filename: The PDF Filename to write to.
+            :param artifact_name: Artifact name to log the PDF to.
+            """
             super().__init__(filename)
             self.artifact_name = artifact_name
-            self.parent: BaseExperiment = parent
+            self.parent = parent
             self.plot_index = 0
 
         def savefig(self, figure=None, **kwargs):
+            """
+            Save a figure to the PDF.
+
+            This will also log the figure to the ML Server.
+            :param figure: The figure to save.
+            :param kwargs: Additional arguments to pass to matplotlib.
+            """
             super().savefig(figure, **kwargs)
             if figure is None:
                 figure = plt.gcf()
@@ -68,28 +85,58 @@ class BaseExperiment(ABC):
             self.plot_index += 1
 
     class BokehWrapper(object):
+        """
+        Wrapper to provide a context manager for Bokeh.
+        """
         def __init__(self, doc: "Document", temp_directory: str):
+            """
+            :param doc: The Bokeh Document to wrap.
+            :param temp_directory: Local temporary directory to save Bokeh files to.
+            """
             self.doc = doc
             self.temp_directory = temp_directory
             self.files: list[str] = []
             self.output_file_name: Optional[str] = None
 
         def output_file(self, name: str, title="Bokeh Plot", mode=None):
+            """
+            Set the Bokeh output file.
+
+            See `output_file <https://docs.bokeh.org/en/latest/docs/reference/io.html#bokeh.io.output.output_file>`_
+            for more information.
+
+            :param name: The name of the file to save to.
+            :param title: The title of the plot.
+            :param mode: The mode to save the file in.
+            """
             self.output_file_name = os.path.join(self.temp_directory, name)
             bokeh_io.output_file(self.output_file_name, title, mode)
 
         def save(self, obj, filename=None, resources=None, title=None, template=None, state=None, **kwargs):
+            """
+            Save the Bokeh Document to a file.
+
+            See `save <https://docs.bokeh.org/en/latest/docs/reference/io.html#bokeh.io.save>`_
+            for more information.
+            """
             if filename is not None:
                 filename = os.path.join(self.temp_directory, filename)
                 self.files.append(filename)
             bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
 
     class NGASWrapper(object):
+        """
+        Wrapper to provide a context manager for NGAS.
+        """
         def __init__(
             self,
             parent: "BaseExperiment",
             ngas_client: Union[NGASClient, NGASConfiguration]
         ):
+            """
+            :param parent: The experiment that is using this object.
+            :param ngas_client: The NGAS Client to use, or configuration for the NGAS client.
+            """
             self.parent = parent
             if isinstance(ngas_client, NGASClient):
                 self.ngas_client = ngas_client
