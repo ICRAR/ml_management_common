@@ -27,8 +27,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Union, TYPE_CHECKING, Dict, Optional, Generator, Callable, TypeVar
 
 import tempfile
-
-from .model_summary import model_summary
 from .ngas import NGASClient, NGASConfiguration
 
 if TYPE_CHECKING:
@@ -202,8 +200,6 @@ class BaseExperiment(ABC):
         Threads are used because the upload is IO bound and is sped up significantly despite GIL.
         :param ngas_client: If provided, this client will be used to upload artifacts to NGAS. If not provided here,
             it can be provided to the ngas() method when creating an ngas interface.
-        :param ngas_local_cache_dir: If provided, this directory will be used to cache files from NGAS locally.
-            If the file exists in the cache, it will be used instead of downloading the file from NGAS.
         """
         self._upload_threads = upload_threads
         self._upload_thread_pool: ThreadPoolExecutor
@@ -516,7 +512,7 @@ class BaseExperiment(ABC):
                 self.output_file_name = os.path.join(self.temp_directory, name)
                 bokeh_io.output_file(self.output_file_name, title, mode)
 
-            def save(self, obj, filename=None, resources=None, title=None, template=None, state=None, **kwargs):
+            def save(self, obj, filename=None, resources=None, title=None, template=None, state=None):
                 """
                 Save the Bokeh Document to a file.
 
@@ -526,7 +522,7 @@ class BaseExperiment(ABC):
                 if filename is not None:
                     filename = os.path.join(self.temp_directory, filename)
                     self.files.append(filename)
-                bokeh_io.save(obj, filename, resources, title, template, state, **kwargs)
+                bokeh_io.save(obj, filename, resources, title, template, state)
 
         doc: "Document" = bokeh_io.curdoc()
         old_doc_state = doc.to_json_string()
@@ -577,6 +573,7 @@ class BaseExperiment(ABC):
             dtypes=None,
             dot=None
     ):
+        from .model_summary import model_summary
         return model_summary(model, input_size, batch_size, device, dtypes, dot)
 
     @abstractmethod

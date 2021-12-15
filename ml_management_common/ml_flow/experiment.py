@@ -26,8 +26,6 @@ import mlflow
 from mlflow.entities import RunStatus
 from mlflow.tracking import MlflowClient, artifact_utils
 from mlflow.tracking.artifact_utils import _download_artifact_from_uri
-from matplotlib.figure import Figure as MatplotlibFigure
-import torch
 
 from .std_stream_capture import StdStreamCapture
 from ..base_experiment import BaseExperiment
@@ -114,7 +112,7 @@ class MLFlowExperiment(BaseExperiment):
     def log_image(self, image: Union["numpy.ndarray", "PIL.Image.Image"], artifact_path: str, **kwargs):
         mlflow.log_image(image, artifact_path)
 
-    def log_figure(self, figure: MatplotlibFigure, artifact_path: str, **kwargs):
+    def log_figure(self, figure: "MatplotlibFigure", artifact_path: str, **kwargs):
         mlflow.log_figure(figure, artifact_path)
 
     def log_metric(self, key: str, value: float, **kwargs):
@@ -137,7 +135,7 @@ class MLFlowExperiment(BaseExperiment):
             model,
             input_size,
             batch_size=-1,
-            device=torch.device("cuda:0"),
+            device=None,
             dtypes=None,
             dot=None,
     ):
@@ -152,6 +150,9 @@ class MLFlowExperiment(BaseExperiment):
         :param dot:
         :return:
         """
+        if device is None:
+            import torch
+            device = torch.device("cuda:0")
         mlflow.log_text(self._get_model_summary(model, input_size, batch_size, device, dtypes, dot), "model_summary.txt")
 
     def download_model(self, uri: str, model=None):
