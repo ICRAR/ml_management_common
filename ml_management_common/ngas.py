@@ -574,6 +574,7 @@ class NGASClient(object):
         file_version: Optional[int] = None,
         processing: Optional[str] = None,
         processing_pars: Optional[str] = None,
+        ignore_cache: bool = False,
     ):
         params = {
             "file_id": file_id,
@@ -585,7 +586,7 @@ class NGASClient(object):
         if processing_pars is not None:
             params["processing_pars"] = processing_pars
 
-        if self.config.cache_dir is not None:
+        if self.config.cache_dir is not None and ignore_cache is False:
             # Check the cache first for this file.
             # Check exact
             cache_path = self._find_cache_path(file_id, file_version)
@@ -593,10 +594,13 @@ class NGASClient(object):
                 # We have a cached version of it
                 return NGASFileResponse(cache_path, 200, CaseInsensitiveDict(), file_id, local_path=cache_path)
 
-        if self.config.force_cache:
+        if self.config.force_cache and ignore_cache is False:
             # Prevent the upload in force_cache mode, since the user is trying to conserve
             # internet bandwidth.
             raise RuntimeError("No cached version, will not download because force_cache=True")
+
+        if ignore_cache:
+            self.logging.info("ignore_cache=True, retrieving file.")
 
         response = self._ngas_request_file(NGASCommand.RETRIEVE, params)
         if response.http_ok and self.config.cache_dir:
