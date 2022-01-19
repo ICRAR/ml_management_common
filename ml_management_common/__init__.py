@@ -25,6 +25,7 @@ from .model_summary import model_summary
 from .ngas import NGASConfiguration
 from .task_types import TaskTypes
 from .null_experiment import NullExperiment
+from .base_experiment import BaseExperiment
 
 from typing import Optional
 from ruamel.yaml import YAML
