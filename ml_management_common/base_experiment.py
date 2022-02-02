@@ -202,7 +202,7 @@ class BaseExperiment(ABC):
             it can be provided to the ngas() method when creating an ngas interface.
         """
         self._upload_threads = upload_threads
-        self._upload_thread_pool: ThreadPoolExecutor
+        self._upload_thread_pool: ThreadPoolExecutor = None
         self._futures_in_progress: set[Future] = set()
         self._ngas_client = ngas_client
 
@@ -212,7 +212,7 @@ class BaseExperiment(ABC):
             self._upload_thread_pool.__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._upload_thread_pool:
+        if self._upload_thread_pool is not None:
             self._upload_thread_pool.__exit__(exc_type, exc_val, exc_tb)
 
     def ngas(self, ngas_client: Union[NGASClient, NGASConfiguration, None] = None):

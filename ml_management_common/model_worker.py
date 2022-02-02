@@ -34,12 +34,12 @@ if TYPE_CHECKING:
 
 
 def run_model_worker(
-    run_model_function: Callable[[str, str, Any, BaseExperiment], Any],
-    ml_management_config_file: str,
-    model_name: str,
-    model_version: str,
-    model_worker_port=8080,
-    model_worker_host=None
+        run_model_function: Callable[[str, str, Any, BaseExperiment], Any],
+        ml_management_config_file: str,
+        model_name: str,
+        model_version: str,
+        model_worker_port=8080,
+        model_worker_host=None
 ):
     """
     MLFlow model worker that can load a model from MLFlow, then run prediction tasks against the model.
@@ -90,11 +90,11 @@ def run_model_worker(
                         f.write(chunk)
                     return f.name
 
-    async def predict(input_file: str, output_file: str, exp: BaseExperiment):
+    def predict(input_file: str, output_file: str, exp: BaseExperiment):
         # perform preprocessing
         model = exp.download_model(f"models:/{model_name}/{model_version}")
         # Expected to write the result to output_file
-        run_model_function(input_file, output_file, model, exp)
+        numpy = run_model_function(input_file, output_file, model, exp)
         exp.log_artifact(output_file)
 
     def response(output_file: str, request: web.Request):
@@ -113,10 +113,10 @@ def run_model_worker(
     @routes.post('/predict_file')
     async def predict_file(request: web.Request):
         with create_experiment(
-            "model_worker_prediction_file",
-            TaskTypes.application,
-            ml_management_config_file,
-            upload_threads=0
+                "model_worker_prediction_file",
+                TaskTypes.application,
+                ml_management_config_file,
+                upload_threads=0
         ) as exp:
             try:
                 if not request.can_read_body:
@@ -124,8 +124,8 @@ def run_model_worker(
                     return web.Response(status=400, text="Could not read request body")
 
                 with tempfile.TemporaryDirectory() as tempdir:
-                    input_file = f"{tempdir}/input"
-                    output_file = f"{tempdir}/output"
+                    input_file = f"{tempdir}/input.npy"
+                    output_file = f"{tempdir}/output.npy"
                     reader = aiohttp.MultipartReader(request.headers, request.content)
                     with open(input_file, "wb") as f:
                         part = await reader.next()
@@ -133,8 +133,9 @@ def run_model_worker(
                             print("No file")
                             return web.Response(status=400, text="No file")
                         f.write(await part.read())
-                    await predict(input_file, output_file, exp)
-                    return response(output_file, request)
+                    predict(input_file, output_file, exp)
+                    r = response(output_file, request)
+                    return r
             except Exception as e:
                 print(f"Exception during prediction: {e}")
                 return web.Response(status=500, text=str(e))
@@ -142,9 +143,9 @@ def run_model_worker(
     @routes.post('/predict_url')
     async def predict_url(request: web.Request):
         with create_experiment(
-            "model_worker_prediction_url",
-            TaskTypes.application,
-            ml_management_config_file
+                "model_worker_prediction_url",
+                TaskTypes.application,
+                ml_management_config_file
         ) as exp:
             try:
                 if not request.can_read_body:
@@ -162,8 +163,9 @@ def run_model_worker(
                     input_file = f"{tempdir}/input"
                     output_file = f"{tempdir}/output"
                     await download_file(url, input_file)
-                    await predict(input_file, output_file, exp)
-                    return response(output_file, request)
+                    predict(input_file, output_file, exp)
+                    r = response(output_file, request)
+                    return r
             except Exception as e:
                 print(f"Exception during prediction: {e}")
                 return web.Response(status=500, text=str(e))
