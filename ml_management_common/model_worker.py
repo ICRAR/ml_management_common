@@ -112,7 +112,12 @@ def run_model_worker(
 
     @routes.post('/predict_file')
     async def predict_file(request: web.Request):
-        with create_experiment("model_worker_prediction_file", TaskTypes.application, ml_management_config_file) as exp:
+        with create_experiment(
+            "model_worker_prediction_file",
+            TaskTypes.application,
+            ml_management_config_file,
+            upload_threads=0
+        ) as exp:
             try:
                 if not request.can_read_body:
                     print("Could not read request body")
@@ -136,7 +141,12 @@ def run_model_worker(
 
     @routes.post('/predict_url')
     async def predict_url(request: web.Request):
-        with create_experiment("model_worker_prediction_url", TaskTypes.application, ml_management_config_file) as exp:
+        with create_experiment(
+            "model_worker_prediction_url",
+            TaskTypes.application,
+            ml_management_config_file,
+            upload_threads=0
+        ) as exp:
             try:
                 if not request.can_read_body:
                     print("Could not read request body")
