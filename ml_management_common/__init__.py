@@ -110,4 +110,4 @@ def create_experiment(name: str, type: TaskTypes, configuration_path: Optional[s
             print(f"Failed to read experiment configuration file: ${configuration_path}")
             Experiment = NullExperiment
 
-    return Experiment(name, type, configuration, kwargs)
+    return Experiment(name, type, configuration, kwargs, **kwargs)

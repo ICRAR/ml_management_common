@@ -144,8 +144,7 @@ def run_model_worker(
         with create_experiment(
             "model_worker_prediction_url",
             TaskTypes.application,
-            ml_management_config_file,
-            upload_threads=0
+            ml_management_config_file
         ) as exp:
             try:
                 if not request.can_read_body:
