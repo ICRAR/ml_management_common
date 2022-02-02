@@ -84,13 +84,10 @@ def run_model_worker(
             async with session.get(url) as response:
                 if response.status != 200:
                     return None
-                return await write_response(input_file, response.content)
-
-    async def write_response(filename: str, reader: StreamReader):
-        with open(filename, "wb") as f:
-            async for chunk in reader.iter_chunked(4096):
-                f.write(chunk)
-            return f.name
+                with open(input_file, "wb") as f:
+                    async for chunk in response.content.iter_chunked(4096):
+                        f.write(chunk)
+                    return f.name
 
     async def predict(input_file: str, output_file: str, exp: BaseExperiment):
         # perform preprocessing
@@ -124,7 +121,13 @@ def run_model_worker(
                 with tempfile.TemporaryDirectory() as tempdir:
                     input_file = f"{tempdir}/input"
                     output_file = f"{tempdir}/output"
-                    await write_response(input_file, request.content)
+                    reader = aiohttp.MultipartReader(request.headers, request.content)
+                    with open(input_file, "wb") as f:
+                        part = await reader.next()
+                        if part is None:
+                            print("No file")
+                            return web.Response(status=400, text="No file")
+                        f.write(await part.read())
                     await predict(input_file, output_file, exp)
                     return response(output_file, request)
             except Exception as e:
