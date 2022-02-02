@@ -105,10 +105,12 @@ def run_model_worker(
         email = request.headers.get("Result-Email")
         if email is not None:
             # TODO: Send email if requested
+            print(f"Sent email to {email}")
             return web.Response(status=200, text=f"Sent email to {email}")
         else:
             # return prediction as file
             with open(output_file, "rb") as f:
+                print("Successfully returning response")
                 return web.Response(status=200, body=f)
 
     @routes.post('/predict_file')
@@ -116,6 +118,7 @@ def run_model_worker(
         with create_experiment("model_worker_prediction_file", TaskTypes.application, ml_management_config_file) as exp:
             try:
                 if not request.can_read_body:
+                    print("Could not read request body")
                     return web.Response(status=400, text="Could not read request body")
 
                 with tempfile.TemporaryDirectory() as tempdir:
@@ -125,6 +128,7 @@ def run_model_worker(
                     await predict(input_file, output_file, exp)
                     return response(output_file, request)
             except Exception as e:
+                print(f"Exception during prediction: {e}")
                 return web.Response(status=500, text=str(e))
 
     @routes.post('/predict_url')
@@ -132,10 +136,12 @@ def run_model_worker(
         with create_experiment("model_worker_prediction_url", TaskTypes.application, ml_management_config_file) as exp:
             try:
                 if not request.can_read_body:
+                    print("Could not read request body")
                     return web.Response(status=400, text="Could not read request body")
 
                 content = await request.json()
                 if "url" not in content or isinstance(content["url"], str):
+                    print("Could not find url in request body")
                     return web.Response(status=400, text="Missing 'url' in request body")
 
                 url = content["url"]
@@ -147,6 +153,7 @@ def run_model_worker(
                     await predict(input_file, output_file, exp)
                     return response(output_file, request)
             except Exception as e:
+                print(f"Exception during prediction: {e}")
                 return web.Response(status=500, text=str(e))
 
     app.add_routes(routes)
