@@ -22,15 +22,19 @@
 
 import tempfile
 from collections import Callable
+from typing import TYPE_CHECKING
 
 import aiohttp
 
 from ml_management_common import create_experiment, TaskTypes, BaseExperiment
 from aiohttp import web, StreamReader
 
+if TYPE_CHECKING:
+    import torch
+
 
 def run_model_worker(
-    preprocess_function: Callable[[str, BaseExperiment], str],
+    preprocess_function: Callable[[str, BaseExperiment], 'torch.Tensor'],
     ml_management_config_file: str,
     model_name: str,
     model_version: str,
