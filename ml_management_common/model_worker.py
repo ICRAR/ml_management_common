@@ -110,34 +110,40 @@ def run_model_worker(
     @routes.post('/predict_file')
     async def predict_file(request: web.Request):
         with create_experiment("model_worker_prediction_file", TaskTypes.application, ml_management_config_file) as exp:
-            if not request.can_read_body:
-                return web.Response(status=400, text="Could not read request body")
+            try:
+                if not request.can_read_body:
+                    return web.Response(status=400, text="Could not read request body")
 
-            with tempfile.TemporaryDirectory() as tempdir:
-                input_file = f"{tempdir}/input"
-                output_file = f"{tempdir}/output"
-                await write_response(input_file, request.content)
-                await predict(input_file, output_file, exp)
-                return response(output_file, request)
+                with tempfile.TemporaryDirectory() as tempdir:
+                    input_file = f"{tempdir}/input"
+                    output_file = f"{tempdir}/output"
+                    await write_response(input_file, request.content)
+                    await predict(input_file, output_file, exp)
+                    return response(output_file, request)
+            except Exception as e:
+                return web.Response(status=500, text=str(e))
 
     @routes.post('/predict_url')
     async def predict_url(request: web.Request):
         with create_experiment("model_worker_prediction_url", TaskTypes.application, ml_management_config_file) as exp:
-            if not request.can_read_body:
-                return web.Response(status=400, text="Could not read request body")
+            try:
+                if not request.can_read_body:
+                    return web.Response(status=400, text="Could not read request body")
 
-            content = await request.json()
-            if "url" not in content or isinstance(content["url"], str):
-                return web.Response(status=400, text="Missing 'url' in request body")
+                content = await request.json()
+                if "url" not in content or isinstance(content["url"], str):
+                    return web.Response(status=400, text="Missing 'url' in request body")
 
-            url = content["url"]
-            app.logger.info(f"Downloading remote file from {url}")
-            with tempfile.TemporaryDirectory() as tempdir:
-                input_file = f"{tempdir}/input"
-                output_file = f"{tempdir}/output"
-                await download_file(url, input_file)
-                await predict(input_file, output_file, exp)
-                return response(output_file, request)
+                url = content["url"]
+                app.logger.info(f"Downloading remote file from {url}")
+                with tempfile.TemporaryDirectory() as tempdir:
+                    input_file = f"{tempdir}/input"
+                    output_file = f"{tempdir}/output"
+                    await download_file(url, input_file)
+                    await predict(input_file, output_file, exp)
+                    return response(output_file, request)
+            except Exception as e:
+                return web.Response(status=500, text=str(e))
 
     app.add_routes(routes)
     web.run_app(app, port=model_worker_port, host=model_worker_host)
