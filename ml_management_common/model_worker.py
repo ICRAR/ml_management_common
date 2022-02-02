@@ -108,7 +108,7 @@ def run_model_worker(
             # return prediction as file
             with open(output_file, "rb") as f:
                 print("Successfully returning response")
-                return web.Response(status=200, body=f)
+                return web.Response(status=200, body=f.read())
 
     @routes.post('/predict_file')
     async def predict_file(request: web.Request):
