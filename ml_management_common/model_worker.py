@@ -22,7 +22,7 @@
 
 import tempfile
 from collections import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 
 def run_model_worker(
-    preprocess_function: Callable[[str, BaseExperiment], 'torch.Tensor'],
+    run_model_function: Callable[[str, str, Any, BaseExperiment], Any],
     ml_management_config_file: str,
     model_name: str,
     model_version: str,
@@ -69,7 +69,8 @@ def run_model_worker(
             - 400 Bad Request: If no model is loaded
             - 500 Internal Server Error: If the prediction failed
 
-    :param preprocess_function Function to call to perform preprocessing on the input data.
+    :param run_model_function Function to run the model and produce a prediction.
+           (input_filename, output_filename, model, experiment)
     :param ml_management_config_file Path to the ml management configuration file
     :param model_name MLFlow model to load on startup.
     :param model_version MLFlow model version to automatically load on startup, if provided. If not provided, load the latest version.
@@ -91,11 +92,10 @@ def run_model_worker(
 
     async def predict(input_file: str, output_file: str, exp: BaseExperiment):
         # perform preprocessing
-        input_data = preprocess_function(input_file, exp)
         model = exp.download_model(f"models:/{model_name}/{model_version}")
-        predictions = model(input_data)
+        # Expected to write the result to output_file
+        run_model_function(input_file, output_file, model, exp)
         with open(output_file, "wb") as f:
-            f.write(predictions.cpu().numpy().tobytes())
             exp.log_artifact(output_file)
 
     def response(output_file: str, request: web.Request):
