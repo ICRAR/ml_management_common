@@ -95,8 +95,7 @@ def run_model_worker(
         model = exp.download_model(f"models:/{model_name}/{model_version}")
         # Expected to write the result to output_file
         run_model_function(input_file, output_file, model, exp)
-        with open(output_file, "wb") as f:
-            exp.log_artifact(output_file)
+        exp.log_artifact(output_file)
 
     def response(output_file: str, request: web.Request):
         email = request.headers.get("Result-Email")
@@ -108,7 +107,8 @@ def run_model_worker(
             # return prediction as file
             with open(output_file, "rb") as f:
                 print("Successfully returning response")
-                return web.Response(status=200, body=f.read())
+                body = f.read()
+            return web.Response(status=200, body=body)
 
     @routes.post('/predict_file')
     async def predict_file(request: web.Request):
