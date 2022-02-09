@@ -9,4 +9,3 @@ ruamel.yaml
 defusedxml
 requests
 pillow
-aiohttp
