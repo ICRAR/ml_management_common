@@ -70,6 +70,7 @@ class MLFlowExperiment(BaseExperiment):
     def __enter__(self):
         if self.ignore:
             return
+
         self.logger.__enter__()
         mlflow.set_tracking_uri(self.configuration.tracking_server)
         mlflow.set_experiment(self.configuration.project_name)
