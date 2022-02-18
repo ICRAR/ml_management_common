@@ -98,7 +98,7 @@ class MLFlowExperiment(BaseExperiment):
         except ModuleNotFoundError as ignore:
             # this is an acceptable error, as it means we are not running on a pytorch environment
             print(
-                "Pytorch was not found in the current venv, mlflow.pytorch.autolog will not be enabled"
+                "Pytorch-lightning was not found in the current venv, mlflow.pytorch.autolog will not be enabled"
             )
 
         self.run.__enter__()
