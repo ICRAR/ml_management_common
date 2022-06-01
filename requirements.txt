@@ -9,4 +9,3 @@ pillow
 requests
 ruamel.yaml
 tabulate
-torch
